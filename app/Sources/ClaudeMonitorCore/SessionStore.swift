@@ -160,6 +160,14 @@ public struct SessionStore: Codable, Equatable, Sendable {
         }
     }
 
+    /// "/Applications/Visual Studio Code.app/Contents/Frameworks/…/Helper" → "/Applications/Visual Studio Code.app".
+    /// The outermost app wins: a desktop chain also contains a bundled `claude.app` binary.
+    static func hostApp(_ chain: [String]) -> String? {
+        guard let outer = chain.last(where: { $0.contains(".app/") }),
+              let end = outer.range(of: ".app/") else { return nil }
+        return String(outer[..<end.lowerBound]) + ".app"
+    }
+
     private func absorbMetadata(_ e: HookEvent, into s: inout Session, overwrite: Bool) {
         func set<T>(_ keyPath: WritableKeyPath<Session, T?>, _ value: T?) {
             guard let value else { return }
@@ -168,6 +176,7 @@ public struct SessionStore: Codable, Equatable, Sendable {
         set(\.cwd, e.cwd)
         set(\.tty, e.tty)
         set(\.claudePid, e.claudePid)
+        set(\.hostApp, e.procChain.flatMap(Self.hostApp))
         let repoPath = e.gitRoot ?? e.cwd
         set(\.repo, repoPath.map { URL(fileURLWithPath: $0).lastPathComponent })
         set(\.branch, e.gitBranch)

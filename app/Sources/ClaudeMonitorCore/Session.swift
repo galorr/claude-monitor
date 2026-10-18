@@ -102,6 +102,8 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
     public var source: SessionSource
     public var tty: String?
     public var claudePid: Int?
+    /// The outermost .app in the process chain (Terminal, iTerm2, VS Code, Claude), for jumping.
+    public var hostApp: String?
     public var state: SessionState
     public var lastEventAt: Date
     public var lastMessage: String?
@@ -141,6 +143,9 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
     public var deadAfterHours = 6
     public var hideEndedAfterHours = 24
     public var notificationsEnabled = true
+    public var hotkeyEnabled = true
+    /// Opens the session window from anywhere (spec Phase 5).
+    public var hotkey = Hotkey.default
     /// Mongo TTL on events and transitions (spec Phase 3: 30 days, configurable).
     public var retentionDays = 30
 
@@ -155,6 +160,8 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
         hideEndedAfterHours = try c.decodeIfPresent(Int.self, forKey: .hideEndedAfterHours) ?? d.hideEndedAfterHours
         notificationsEnabled = try c.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? d.notificationsEnabled
         retentionDays = try c.decodeIfPresent(Int.self, forKey: .retentionDays) ?? d.retentionDays
+        hotkeyEnabled = try c.decodeIfPresent(Bool.self, forKey: .hotkeyEnabled) ?? d.hotkeyEnabled
+        hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) ?? d.hotkey
     }
 
     public var staleAfter: TimeInterval { TimeInterval(staleAfterMinutes * 60) }

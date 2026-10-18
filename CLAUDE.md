@@ -3,7 +3,7 @@
 macOS menu-bar app that tracks local Claude Code sessions (terminal + desktop).
 Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log every one).
 
-**Current phase:** 5, jump to session + epics. Phases 0–4 are done.
+**Current phase:** all spec phases (0–5) are done.
 
 ## Rules
 - Work phase by phase. Stop at each phase end with test instructions, then commit.

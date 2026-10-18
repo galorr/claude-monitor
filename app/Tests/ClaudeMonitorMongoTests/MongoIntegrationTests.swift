@@ -7,7 +7,7 @@ import Testing
 /// drains, counts match, no duplicates. Each test starts its own throwaway mongod on a
 /// free port with a temp data dir, so the real server is never touched. Skipped when
 /// mongod is not installed.
-@Suite(.serialized, .enabled(if: TestMongod.binary != nil, "mongod not installed"))
+@Suite(.serialized, .timeLimit(.minutes(2)), .enabled(if: TestMongod.binary != nil, "mongod not installed"))
 struct MongoIntegrationTests {
     static let captureURL = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
@@ -252,7 +252,7 @@ final class TestMongod: @unchecked Sendable {
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw MongoStore.StoreError.timeout
+        throw TimeoutError()
     }
 
     func stop() {

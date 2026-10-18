@@ -37,6 +37,13 @@ struct SessionListView: View {
                 }
             }
             .padding(12)
+            if let message = model.jumpMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
             Divider()
             if model.sessions.isEmpty {
                 Text("No sessions yet.\nEvents file: \(model.paths.eventsFile.path)")
@@ -49,14 +56,19 @@ struct SessionListView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            ForEach(model.sessions) { session in
-                                SessionRow(session: session,
-                                           highlighted: session.id == model.highlightedSessionId,
-                                           showHistory: model.isMongoConfigured,
-                                           onHistory: { model.showHistory(session) },
-                                           onMarkReviewed: { model.markReviewed(session) })
-                                .id(session.id)
-                                Divider()
+                            ForEach(model.listItems) { item in
+                                switch item {
+                                case .session(let session):
+                                    row(session, inEpic: false)
+                                case .epic(let group):
+                                    EpicHeader(group: group, collapsed: model.isCollapsed(group.epicKey)) {
+                                        model.toggleEpic(group.epicKey)
+                                    }
+                                    Divider()
+                                    if !model.isCollapsed(group.epicKey) {
+                                        ForEach(group.sessions) { row($0, inEpic: true) }
+                                    }
+                                }
                             }
                         }
                         .background(GeometryReader { geo in
@@ -102,6 +114,19 @@ struct SessionListView: View {
         .onDisappear { model.highlightedSessionId = nil }
     }
 
+    @ViewBuilder
+    private func row(_ session: Session, inEpic: Bool) -> some View {
+        SessionRow(session: session,
+                   highlighted: session.id == model.highlightedSessionId,
+                   inEpic: inEpic,
+                   showHistory: model.isMongoConfigured,
+                   onOpen: { model.open(session) },
+                   onHistory: { model.showHistory(session) },
+                   onMarkReviewed: { model.markReviewed(session) })
+            .id(session.id)
+        Divider()
+    }
+
     private var mongoStatusColor: Color {
         switch model.mongoStatus {
         case .offline: .orange
@@ -133,6 +158,17 @@ struct SettingsPanel: View {
                 Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
             Divider().padding(.vertical, 4)
+            HStack {
+                Toggle("Shortcut to open the list", isOn: binding(\.hotkeyEnabled))
+                Spacer()
+                Button(model.recordingHotkey ? "Press keys…" : model.settings.hotkey.display) {
+                    model.startRecordingHotkey()
+                }
+                .help("Click, then press the new shortcut")
+            }
+            if let message = model.hotkeyMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
             Toggle("Notifications", isOn: binding(\.notificationsEnabled))
             Stepper("Stale after \(model.settings.staleAfterMinutes) min of no events",
                     value: binding(\.staleAfterMinutes), in: 1...240)
@@ -179,7 +215,10 @@ struct SettingsPanel: View {
 struct SessionRow: View {
     let session: Session
     var highlighted = false
+    /// Inside an epic group: lead with the task id, indent.
+    var inEpic = false
     var showHistory = false
+    var onOpen: () -> Void = {}
     var onHistory: () -> Void = {}
     let onMarkReviewed: () -> Void
 
@@ -191,8 +230,11 @@ struct SessionRow: View {
                 .help(session.source.rawValue)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(session.displayRepo).fontWeight(.semibold).lineLimit(1)
-                    if let detail = branchDetail {
+                    if inEpic, let task = session.taskId {
+                        Text(task).fontWeight(.semibold).monospacedDigit()
+                    }
+                    Text(session.displayRepo).fontWeight(inEpic ? .regular : .semibold).lineLimit(1)
+                    if !inEpic, let detail = branchDetail {
                         Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
@@ -222,9 +264,13 @@ struct SessionRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, inEpic ? 28 : 12)
+        .padding(.trailing, 12)
         .padding(.vertical, 8)
         .background(highlighted ? Color.accentColor.opacity(0.15) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .help(session.state.isEnded ? "This session has ended" : "Click to open its terminal")
     }
 
     private var branchDetail: String? {
@@ -360,5 +406,35 @@ struct StatsView: View {
                 .font(.callout)
             }
         }
+    }
+}
+
+struct EpicHeader: View {
+    let group: EpicGroup
+    let collapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(group.epicKey).fontWeight(.semibold)
+            Text("\(group.sessions.count) session\(group.sessions.count == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if group.attentionCount > 0 {
+                Text("\(group.attentionCount) need you")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.04))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggle)
     }
 }

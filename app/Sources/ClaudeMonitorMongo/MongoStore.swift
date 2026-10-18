@@ -13,13 +13,11 @@ public struct MongoStore: PersistenceStore {
     }
 
     public enum StoreError: Error, CustomStringConvertible {
-        case timeout
         case command(code: Int?, message: String)
         case badReply(String)
 
         public var description: String {
             switch self {
-            case .timeout: "timed out"
             case .command(let code, let message): "Mongo error \(code.map(String.init) ?? "?"): \(message)"
             case .badReply(let what): "unexpected reply: \(what)"
             }
@@ -341,39 +339,4 @@ public struct MongoStore: PersistenceStore {
 func bsonDate(_ date: Date) -> Date {
     let ms = (date.timeIntervalSince1970 * 1000).rounded()
     return Date(timeIntervalSince1970: (ms + 0.5) / 1000)
-}
-
-/// Fails with `.timeout` if `operation` has not finished in time. Unlike a task group,
-/// it does not wait for an operation that ignores cancellation.
-func withTimeout<T: Sendable>(_ timeout: Duration,
-                              _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
-    let gate = ResumeOnce<T>()
-    return try await withCheckedThrowingContinuation { continuation in
-        gate.set(continuation)
-        let work = Task {
-            do { gate.resume(with: .success(try await operation())) } catch { gate.resume(with: .failure(error)) }
-        }
-        Task {
-            try? await Task.sleep(for: timeout)
-            gate.resume(with: .failure(MongoStore.StoreError.timeout))
-            work.cancel()
-        }
-    }
-}
-
-private final class ResumeOnce<T: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<T, Error>?
-
-    func set(_ c: CheckedContinuation<T, Error>) {
-        lock.withLock { continuation = c }
-    }
-
-    func resume(with result: Result<T, Error>) {
-        let c: CheckedContinuation<T, Error>? = lock.withLock {
-            defer { continuation = nil }
-            return continuation
-        }
-        c?.resume(with: result)
-    }
 }

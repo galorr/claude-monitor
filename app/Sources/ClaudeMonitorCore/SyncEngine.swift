@@ -90,6 +90,9 @@ public actor SyncEngine {
         public var pollInterval: Duration = .seconds(2)
         public var initialBackoff: Duration = .seconds(1)
         public var maxBackoff: Duration = .seconds(60)
+        /// A store call that takes longer counts as a failure (reconnect), so a hung
+        /// connection cannot stall the sync while it still says "connected".
+        public var operationTimeout: Duration = .seconds(30)
 
         public init() {}
     }
@@ -180,8 +183,12 @@ public actor SyncEngine {
         while !Task.isCancelled, gen == generation, let connect {
             do {
                 if store == nil {
-                    let s = try await connect()
-                    try await s.ensureIndexes(retentionDays: retentionDays)
+                    let days = retentionDays
+                    let s = try await withTimeout(options.operationTimeout) {
+                        let s = try await connect()
+                        try await s.ensureIndexes(retentionDays: days)
+                        return s
+                    }
                     guard gen == generation else {
                         await s.close()
                         return
@@ -217,20 +224,24 @@ public actor SyncEngine {
         let gen = generation
         let movedEvents = try await syncFile(paths.eventsFile, cursor: \.events, label: "events") { lines in
             let events = lines.compactMap(StoredEvent.from)
-            if !events.isEmpty { try await store.insertEvents(events) }
+            if !events.isEmpty { try await self.timed { try await store.insertEvents(events) } }
         }
         let movedTransitions = try await syncFile(paths.transitionsFile, cursor: \.transitions,
                                                   label: "transitions") { lines in
             let transitions = lines.compactMap(TransitionJournal.decode)
-            if !transitions.isEmpty { try await store.insertTransitions(transitions) }
+            if !transitions.isEmpty { try await self.timed { try await store.insertTransitions(transitions) } }
         }
         for (id, session) in pendingSessions.sorted(by: { $0.key < $1.key }) {
-            _ = try await store.upsertSession(session)
+            _ = try await timed { try await store.upsertSession(session) }
             guard gen == generation else { return false }
             // Only drop it if no newer copy arrived while writing.
             if pendingSessions[id] == session { pendingSessions[id] = nil }
         }
         return movedEvents || movedTransitions
+    }
+
+    private func timed<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withTimeout(options.operationTimeout, operation)
     }
 
     private func syncFile(_ url: URL, cursor keyPath: WritableKeyPath<SyncState, TailCursor>, label: String,

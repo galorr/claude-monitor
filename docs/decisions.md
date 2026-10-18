@@ -278,3 +278,29 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
 - Running Claude sessions keep the hooks they started with (Claude Code reads hooks at startup).
   The repo copy of the script stays in place, so sessions still running the old command keep working.
 - Not handled: `CLAUDE_CONFIG_DIR` (a GUI app doesn't see the shell's environment). Only `~/.claude/settings.json` is used.
+
+## D-015 — Phase 5: jump, epics, hotkey
+- **Where a click goes** (`JumpPlan`, pure, in Core): from the session's tty and **host app**, the
+  outermost `.app` in the hook's process chain (new `Session.hostApp`).
+  Terminal.app / iTerm2 + tty → AppleScript selects the tab whose `tty` matches, un-minimises and
+  raises its window. Another host (VS Code's built-in terminal) → just activate that app (its
+  tabs can't be targeted). Desktop → activate Claude.app. tty without host → search Terminal,
+  then iTerm2. Ended sessions don't jump (the tty may belong to something else by now).
+- The tty is validated (`/dev/tty` + letters/digits only) before it goes into AppleScript, since
+  events.jsonl is input.
+- Only running terminals are searched (`tell application` would otherwise launch them).
+- **Automation permission:** Info.plist has `NSAppleEventsUsageDescription`, and macOS asks the
+  first time. If denied (-1743), the terminal is still activated and the menu explains where to allow it.
+  Ad-hoc signing: a rebuilt app may be asked again.
+- **Epics:** `ListItem.items` groups sessions with an epic_key. Each epic sits where its most
+  urgent session would sit in the flat list, so urgency order still holds. The header shows the
+  session count and how many need attention; rows inside show the task id first. Collapsed
+  epics are remembered (UserDefaults). A notification for a session in a collapsed epic expands it.
+- **Hotkey:** default ⌃⌥M, configurable (recorded from a key press; needs ⌘, ⌃ or ⌥) and can be
+  turned off. Carbon `RegisterEventHotKey` = global and needs no Accessibility permission. Since
+  the MenuBarExtra can't be opened from code (D-012), the hotkey toggles the same session window a
+  notification click opens. If the shortcut is taken, Settings says so.
+- **Sync hardening (found while testing):** one full test run hung once and could not be
+  reproduced (4/4 runs passed after). Every store call in `SyncEngine` now has a time limit
+  (30 s, then reconnect), so a hung connection can't stall the sync while it says "connected". The
+  Mongo test suite has a 2-minute limit.

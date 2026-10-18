@@ -42,6 +42,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var mongoTesting = false
     @Published private(set) var hookStatus = HookInstaller.Status.missing
     @Published private(set) var hookMessage: String?
+    /// Shown above the list when a click could not jump exactly (cleared after a few seconds).
+    @Published private(set) var jumpMessage: String?
+    @Published private(set) var collapsedEpics: Set<String>
+    @Published private(set) var recordingHotkey = false
+    @Published private(set) var hotkeyMessage: String?
 
     let paths: AppPaths
     let sync: SyncEngine
@@ -56,6 +61,11 @@ final class AppModel: ObservableObject {
     private let hookInstaller = HookInstaller(paths: .standard(
         bundledScript: Bundle.main.url(forResource: "claude-monitor-hook", withExtension: "sh")))
     private static let settingsKey = "settings"
+    private static let collapsedKey = "collapsedEpics"
+    private lazy var jumper = Jumper(log: log)
+    private var hotkeys: HotkeyManager?
+    private var recorder: Any?
+    private var jumpMessageTask: Task<Void, Never>?
     private static let mongoAccount = "mongo-uri"
 
     init() {
@@ -65,6 +75,7 @@ final class AppModel: ObservableObject {
         settings = Self.loadSettings()
         mongoURI = Keychain.read(account: Self.mongoAccount)
         mongoURIDraft = mongoURI ?? ""
+        collapsedEpics = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedKey) ?? [])
 
         let box = WeakBox<AppModel>()
         sync = SyncEngine(paths: paths, log: log) { status in
@@ -78,6 +89,8 @@ final class AppModel: ObservableObject {
             forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
         ) { _ in notifier.start() }
 
+        hotkeys = HotkeyManager { [weak self] in self?.toggleSessionWindow() }
+        applyHotkey()
         refreshHookStatus()
         applyMongoConfig()
         engine.start(settings: settings) { [weak self, sync] update in
@@ -88,6 +101,73 @@ final class AppModel: ObservableObject {
     }
 
     var hasDoneSessions: Bool { sessions.contains { $0.state == .doneUnreviewed } }
+    var listItems: [ListItem] { ListItem.items(sessions) }
+
+    // MARK: - Jump, epics, hotkey
+
+    /// Click on a session: bring its terminal tab (or app) to the front.
+    func open(_ session: Session) {
+        let message = jumper.jump(to: session)
+        log.log("jump: \(session.id) → \(JumpPlan.plan(for: session))" + (message.map { " (\($0))" } ?? ""))
+        jumpMessageTask?.cancel()
+        jumpMessage = message
+        guard message != nil else { return }
+        jumpMessageTask = Task {
+            try? await Task.sleep(for: .seconds(8))
+            if !Task.isCancelled { jumpMessage = nil }
+        }
+    }
+
+    func isCollapsed(_ epic: String) -> Bool { collapsedEpics.contains(epic) }
+
+    func toggleEpic(_ epic: String) {
+        if collapsedEpics.remove(epic) == nil { collapsedEpics.insert(epic) }
+        UserDefaults.standard.set(Array(collapsedEpics).sorted(), forKey: Self.collapsedKey)
+    }
+
+    func startRecordingHotkey() {
+        guard !recordingHotkey else { return }
+        recordingHotkey = true
+        hotkeyMessage = "Press the new shortcut (Esc cancels)."
+        hotkeys?.unregister()  // so pressing the current shortcut records it instead of firing
+        recorder = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.recordHotkey(event) }
+            return nil
+        }
+    }
+
+    private func recordHotkey(_ event: NSEvent) {
+        if event.keyCode == 53 {  // Esc
+            hotkeyMessage = nil
+        } else {
+            let hotkey = HotkeyManager.hotkey(from: event)
+            guard hotkey.isValid else {
+                hotkeyMessage = "Use at least one of ⌘, ⌃ or ⌥. Press again (Esc cancels)."
+                return
+            }
+            hotkeyMessage = nil
+            updateSettings { $0.hotkey = hotkey; $0.hotkeyEnabled = true }
+        }
+        if let recorder { NSEvent.removeMonitor(recorder) }
+        recorder = nil
+        recordingHotkey = false
+        applyHotkey()
+    }
+
+    private func applyHotkey() {
+        let wanted = settings.hotkeyEnabled ? settings.hotkey : nil
+        if hotkeys?.register(wanted) == false {
+            hotkeyMessage = "\(settings.hotkey.display) is already used by another app. Pick another."
+        }
+    }
+
+    /// Hotkey: show the session window, or hide it if it is already in front.
+    private func toggleSessionWindow() {
+        if windows.closeIfFrontmost("sessions") { return }
+        windows.show("sessions", title: "Claude Monitor", topRight: true, floating: true) {
+            SessionListView(model: self)
+        }
+    }
     var isMongoConfigured: Bool { mongoURI != nil }
 
     func markReviewed(_ session: Session) {
@@ -111,6 +191,7 @@ final class AppModel: ObservableObject {
         }
         engine.updateSettings(next)
         if retentionChanged { applyMongoConfig() }
+        if !recordingHotkey { applyHotkey() }
     }
 
     // MARK: - Hooks
@@ -219,6 +300,7 @@ final class AppModel: ObservableObject {
     /// Notification click: open the session window with that session highlighted.
     private func reveal(sessionId: String) {
         highlightedSessionId = sessionId
+        if let epic = sessions.first(where: { $0.id == sessionId })?.epicKey, isCollapsed(epic) { toggleEpic(epic) }
         windows.show("sessions", title: "Claude Monitor", topRight: true, floating: true) {
             SessionListView(model: self)
         }
@@ -241,6 +323,13 @@ final class WeakBox<T: AnyObject>: @unchecked Sendable {
 @MainActor
 final class WindowPresenter {
     private var windows: [String: NSWindow] = [:]
+
+    /// Closes the window if it is visible and in front. Returns whether it did.
+    func closeIfFrontmost(_ key: String) -> Bool {
+        guard let w = windows[key], w.isVisible, w.isKeyWindow, NSApp.isActive else { return false }
+        w.close()
+        return true
+    }
 
     func show<Content: View>(_ key: String, title: String, topRight: Bool = false, floating: Bool = false,
                              content: () -> Content) {

@@ -32,6 +32,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Claude Monitor selects the terminal tab of the session you click.</string>
 </dict>
 </plist>
 PLIST
