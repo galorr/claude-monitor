@@ -244,3 +244,37 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
   stops/starts it. The real server is never touched. It is skipped if mongod is not installed.
 - **Known gap:** if events.jsonl is rotated while Mongo is down, the unsynced tail of the old file is
   not synced (nothing rotates it today).
+
+## D-014 — Phase 4: hook installer
+- **Marking our entries:** the hook command carries a trailing shell comment:
+  `bash "$HOME/Library/Application Support/ClaudeMonitor/bin/claude-monitor-hook.sh" # managed by Claude Monitor`.
+  An extra JSON key on the hook object could break Claude Code's settings validation, while a comment can't;
+  the shell ignores it (checked with `/bin/sh -c`). Ours = any hook whose command runs
+  `claude-monitor-hook.sh`; managed = it also has the marker.
+- **Hand-added entries** (Phase 0 told the user to merge `settings-snippet.json`, which ran the
+  repo copy) are shown as "added by hand". **Take over** replaces each of them where it is with
+  the managed command. Otherwise every event would fire twice. This is the one case where the
+  installer changes an entry it did not write, and only entries that run our own script.
+- **Merge rules:** other hooks are never removed, reordered or changed. An existing entry of ours is
+  updated where it is, a missing one is appended as its own group at the end of that event's list,
+  and duplicates of ours are dropped. Our entries under events this version no longer uses are
+  removed. Uninstall removes only ours, plus any group, event list or `hooks` object that became
+  empty because of that. So install → uninstall gives back the original file byte for byte (tested).
+- **Formatting:** Claude Code writes settings.json as `JSON.stringify(v, null, 2)` + newline. An
+  order-preserving parser and printer (`JSONValue`, numbers kept as written) reproduces that
+  exactly, so the diff is only our lines. Checked read-only against the real file: byte-identical
+  round trip, and only the 8 Claude Monitor hook objects change.
+- **Writing:** a timestamped backup goes to `~/Library/Application Support/ClaudeMonitor/backups/`
+  (not next to settings.json, to keep ~/.claude clean). The file is re-read just before writing; if
+  Claude Code changed it meanwhile, nothing is written. The write is atomic (temp file + rename),
+  keeps the file mode, and follows a symlinked settings.json (so the link stays a link). Then it is validated
+  (JSONSerialization + our entries present/absent). On failure the backup is restored. Malformed
+  settings are never touched.
+- **Script:** bundled in the .app (`Contents/Resources`), installed to `…/ClaudeMonitor/bin` by an
+  atomic rename (a hook starting at that moment runs the old or the new script, never half a
+  file). "Outdated" = our entries differ from what this version writes, or the installed script
+  differs from the bundled one. Uninstall also deletes the installed script.
+- `hooks/settings-snippet.json` now matches exactly what the installer writes (a test checks this).
+- Running Claude sessions keep the hooks they started with (Claude Code reads hooks at startup).
+  The repo copy of the script stays in place, so sessions still running the old command keep working.
+- Not handled: `CLAUDE_CONFIG_DIR` (a GUI app doesn't see the shell's environment). Only `~/.claude/settings.json` is used.

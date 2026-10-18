@@ -84,6 +84,12 @@ struct SessionListView: View {
                         .buttonStyle(.link)
                 }
                 Spacer()
+                if !model.hookStatus.isHealthy {
+                    Button("Hooks need attention") { model.showSettings = true }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
                 Text(model.mongoStatus.label)
                     .font(.caption)
                     .foregroundStyle(mongoStatusColor)
@@ -115,6 +121,18 @@ struct SettingsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            Text(model.hookStatus.label)
+                .foregroundStyle(model.hookStatus.isHealthy ? Color.secondary : Color.orange)
+            HStack {
+                Button(installLabel) { model.installHooks() }
+                    .disabled(model.hookStatus.isHealthy)
+                Button("Uninstall") { model.uninstallHooks() }
+                    .disabled(model.hookStatus == .missing)
+            }
+            if let message = model.hookMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            Divider().padding(.vertical, 4)
             Toggle("Notifications", isOn: binding(\.notificationsEnabled))
             Stepper("Stale after \(model.settings.staleAfterMinutes) min of no events",
                     value: binding(\.staleAfterMinutes), in: 1...240)
@@ -141,6 +159,15 @@ struct SettingsPanel: View {
         }
         .font(.callout)
         .padding(12)
+        .onAppear { model.refreshHookStatus() }
+    }
+
+    private var installLabel: String {
+        switch model.hookStatus {
+        case .outdated: "Update hooks"
+        case .manual: "Take over hooks"
+        default: "Install hooks"
+        }
     }
 
     private func binding<T>(_ keyPath: WritableKeyPath<MonitorSettings, T>) -> Binding<T> {

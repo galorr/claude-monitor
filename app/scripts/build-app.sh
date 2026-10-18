@@ -10,8 +10,10 @@ bin="$(swift build -c release --show-bin-path)/ClaudeMonitor"
 
 app="build/ClaudeMonitor.app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/ClaudeMonitor"
+# The hook installer (Settings → Hooks) copies this into Application Support/ClaudeMonitor/bin.
+cp ../hooks/claude-monitor-hook.sh "$app/Contents/Resources/claude-monitor-hook.sh"
 
 version="0.1.0"
 build="$(git rev-list --count HEAD 2>/dev/null || echo 1)"

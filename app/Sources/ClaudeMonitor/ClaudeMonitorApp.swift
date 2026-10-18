@@ -40,6 +40,8 @@ final class AppModel: ObservableObject {
     @Published var mongoURIDraft: String
     @Published private(set) var mongoTestResult: String?
     @Published private(set) var mongoTesting = false
+    @Published private(set) var hookStatus = HookInstaller.Status.missing
+    @Published private(set) var hookMessage: String?
 
     let paths: AppPaths
     let sync: SyncEngine
@@ -51,6 +53,8 @@ final class AppModel: ObservableObject {
     /// Keeps configure calls in order.
     private var configureTask: Task<Void, Never>?
     private let windows = WindowPresenter()
+    private let hookInstaller = HookInstaller(paths: .standard(
+        bundledScript: Bundle.main.url(forResource: "claude-monitor-hook", withExtension: "sh")))
     private static let settingsKey = "settings"
     private static let mongoAccount = "mongo-uri"
 
@@ -74,6 +78,7 @@ final class AppModel: ObservableObject {
             forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
         ) { _ in notifier.start() }
 
+        refreshHookStatus()
         applyMongoConfig()
         engine.start(settings: settings) { [weak self, sync] update in
             // Straight to the sync: Mongo upserts don't wait for the UI.
@@ -106,6 +111,37 @@ final class AppModel: ObservableObject {
         }
         engine.updateSettings(next)
         if retentionChanged { applyMongoConfig() }
+    }
+
+    // MARK: - Hooks
+
+    func refreshHookStatus() {
+        hookStatus = hookInstaller.status()
+    }
+
+    func installHooks() {
+        runHookAction("Installed") { try $0.install() }
+    }
+
+    func uninstallHooks() {
+        runHookAction("Removed") { try $0.uninstall() }
+    }
+
+    private func runHookAction(_ verb: String, _ action: (HookInstaller) throws -> HookInstaller.Outcome) {
+        do {
+            switch try action(hookInstaller) {
+            case .unchanged:
+                hookMessage = "Nothing to change."
+            case .written(let backup):
+                hookMessage = "\(verb). " + (backup.map { "Backup: \($0.path)" } ?? "")
+                    + "\nRunning Claude sessions keep their old hooks until restarted."
+            }
+            log.log("hooks: \(verb.lowercased()) (\(hookInstaller.status().label))")
+        } catch {
+            hookMessage = "Failed: \(error)"
+            log.log("hooks: \(verb.lowercased()) failed: \(error)")
+        }
+        refreshHookStatus()
     }
 
     // MARK: - Mongo

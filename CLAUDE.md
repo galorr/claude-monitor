@@ -3,7 +3,7 @@
 macOS menu-bar app that tracks local Claude Code sessions (terminal + desktop).
 Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log every one).
 
-**Current phase:** 4, hook installer. Phases 0–3 are done.
+**Current phase:** 5, jump to session + epics. Phases 0–4 are done.
 
 ## Rules
 - Work phase by phase. Stop at each phase end with test instructions, then commit.
@@ -13,8 +13,8 @@ Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log ever
 ## Layout
 - `hooks/claude-monitor-hook.sh`: appends one JSON line per event to
   `~/Library/Application Support/ClaudeMonitor/events.jsonl` (override: `CLAUDE_MONITOR_EVENTS_FILE`)
-- `hooks/settings-snippet.json`: hooks block to merge into `~/.claude/settings.json`
-- `fixtures/`: anonymised captured payloads (test inputs)
+- `hooks/settings-snippet.json`: what the app's hook installer writes (manual reference; D-014)
+- `fixtures/`: anonymised captured payloads; `fixtures/settings/` = settings.json cases for the installer
 - `app/`: Swift package (no Xcode, D-009). `ClaudeMonitorCore` = all logic (incl. sync);
   `ClaudeMonitorMongo` = the only MongoKitten code; `ClaudeMonitor` = SwiftUI shell
 
