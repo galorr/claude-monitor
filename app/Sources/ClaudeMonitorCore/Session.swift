@@ -126,6 +126,13 @@ public struct StateChange: Equatable, Sendable {
     public var from: SessionState?
     public var to: SessionState
     public var at: Date
+
+    public init(sessionId: String, from: SessionState?, to: SessionState, at: Date) {
+        self.sessionId = sessionId
+        self.from = from
+        self.to = to
+        self.at = at
+    }
 }
 
 /// User-tunable thresholds (spec Phase 2). Stored by the app in UserDefaults.
@@ -134,8 +141,21 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
     public var deadAfterHours = 6
     public var hideEndedAfterHours = 24
     public var notificationsEnabled = true
+    /// Mongo TTL on events and transitions (spec Phase 3: 30 days, configurable).
+    public var retentionDays = 30
 
     public init() {}
+
+    // Settings saved before a field existed decode with that field's default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MonitorSettings()
+        staleAfterMinutes = try c.decodeIfPresent(Int.self, forKey: .staleAfterMinutes) ?? d.staleAfterMinutes
+        deadAfterHours = try c.decodeIfPresent(Int.self, forKey: .deadAfterHours) ?? d.deadAfterHours
+        hideEndedAfterHours = try c.decodeIfPresent(Int.self, forKey: .hideEndedAfterHours) ?? d.hideEndedAfterHours
+        notificationsEnabled = try c.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? d.notificationsEnabled
+        retentionDays = try c.decodeIfPresent(Int.self, forKey: .retentionDays) ?? d.retentionDays
+    }
 
     public var staleAfter: TimeInterval { TimeInterval(staleAfterMinutes * 60) }
     public var deadAfter: TimeInterval { TimeInterval(deadAfterHours * 3600) }

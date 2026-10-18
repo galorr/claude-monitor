@@ -41,6 +41,9 @@ is not applicable as given (URI has no credentials) — revisit in Phase 3.
 Observed: 27017 is a **native mongod** bound to 127.0.0.1/::1 (not Docker); the Docker
 `memory-agent-mongodb` container is on 127.0.0.1:27018. Both loopback-only. Confirm in Phase 3.
 The URI still goes in the Keychain, never in the repo.
+**Confirmed in Phase 3 (2026-10-18):** native mongod 8.3.4 on 127.0.0.1:27017 (Homebrew,
+loopback only), database `agent_memory`, prefixed collections. **No auth / no dedicated user**
+(the user's choice; the server is loopback-only). Settings warns if a URI is not loopback.
 
 ## D-003 — Extra hook events in the spike
 Beyond the five spec events we also capture `PermissionRequest`, `PostToolUse` and
@@ -202,3 +205,42 @@ leaves no SessionEnd, so that is the case where the pid check turns it `presumed
 Headless `claude -p` (seen in Phase 2 testing): the process exits right after the turn, so the
 async `Stop` hook is sometimes dropped and only SessionStart/UserPromptSubmit/SessionEnd arrive.
 Interactive sessions are unaffected. Headless runs are not a target of this app.
+
+## D-013 — Phase 3: Mongo sync design
+- **MongoKitten 7.16.3** (released 2026-05-20, maintained). Checked before writing code: it builds with the
+  CLT-only Swift 6.4 toolchain and talks to mongod 8.3.4 (insert/count/drop spike).
+- **Targets:** `ClaudeMonitorCore` defines `PersistenceStore`, `InMemoryStore` (reference
+  implementation for tests) and `SyncEngine`. `ClaudeMonitorMongo` is the only target that
+  imports MongoKitten (`MongoStore`). The app shell wires them together.
+- **Raw commands** instead of MongoKitten's helpers: `insertMany` cannot set `ordered:false`,
+  and the duplicate-key handling must be explicit (11000 = already synced).
+- **Collections** (in `agent_memory`, D-002): `claude_monitor_events` (the full hook line plus `ts` as
+  a BSON date; unique `event_id`, `{session_id:1, ts:-1}`, TTL on `ts`), `claude_monitor_sessions`
+  (`_id` = session id; state, repo, epic_key, updated_at), and **`claude_monitor_transitions`
+  (an addition to the spec)**.
+- **Why a transitions collection:** the medians need the time of each state change, and some
+  changes (reviewed, stale, presumed_dead) are made by the app, not by a hook. The engine
+  appends every change to a local `transitions.jsonl`, which the sync tails exactly like
+  events.jsonl. So app-made changes survive a Mongo outage too. Ids are
+  `<session>|<state>|<ms>`, so a replay deduplicates. On first launch with no journal, it is
+  backfilled from the part of events.jsonl the snapshot has already consumed. TTL on `at`, same retention as events.
+- **Sync progress:** `sync.json` holds a cursor per file, separate from state.json (contract #3).
+  Batches of ≤200 lines; the cursor advances after each batch the store accepted, so a
+  failure re-sends at most one batch. Exponential backoff 1s→60s, then reconnect. sync.json
+  stores a SHA-256 of the URI (never the URI): a different URI syncs everything again.
+- **Sessions:** upserted with filter `{_id, updated_at: {$lte: new}}` + upsert. If the stored copy
+  is newer, the upsert collides on `_id` (11000) = skipped. The engine's first update carries all
+  sessions, so a relaunch re-sends anything that was pending at quit.
+- **Medians:** from transitions with `$setWindowFields` + `$shift`, ordered by (at, _id) per session:
+  needs_permission until the next transition; done_unreviewed until the next one, only when the next one is
+  reviewed. Mongo returns the durations and Swift (`StatsMath`) takes the median, so Mongo and
+  InMemoryStore agree exactly (an integration test checks this). Session counts = sessions with
+  `updated_at` in the range.
+- **History:** paged by an `(ts, event_id)` cursor, so events with equal timestamps are not skipped.
+- **Dates:** BSON stores milliseconds and MongoKitten truncates `seconds*1000`, so a parsed
+  `.811` (held as .81099…) became `.810`. Every date written or queried is rounded to the nearest
+  millisecond first (`bsonDate`). Transition times are whole milliseconds from the start.
+- **Integration test:** starts its own throwaway mongod (free port, temp dbpath, loopback) and
+  stops/starts it. The real server is never touched. It is skipped if mongod is not installed.
+- **Known gap:** if events.jsonl is rotated while Mongo is down, the unsynced tail of the old file is
+  not synced (nothing rotates it today).

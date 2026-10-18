@@ -51,9 +51,10 @@ struct SessionListView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(model.sessions) { session in
                                 SessionRow(session: session,
-                                           highlighted: session.id == model.highlightedSessionId) {
-                                    model.markReviewed(session)
-                                }
+                                           highlighted: session.id == model.highlightedSessionId,
+                                           showHistory: model.isMongoConfigured,
+                                           onHistory: { model.showHistory(session) },
+                                           onMarkReviewed: { model.markReviewed(session) })
                                 .id(session.id)
                                 Divider()
                             }
@@ -78,7 +79,14 @@ struct SessionListView: View {
             HStack {
                 Button(model.showSettings ? "Hide settings" : "Settings…") { model.showSettings.toggle() }
                     .buttonStyle(.link)
+                if model.isMongoConfigured {
+                    Button("Stats…") { model.showStats() }
+                        .buttonStyle(.link)
+                }
                 Spacer()
+                Text(model.mongoStatus.label)
+                    .font(.caption)
+                    .foregroundStyle(mongoStatusColor)
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
             }
@@ -86,6 +94,14 @@ struct SessionListView: View {
         }
         .frame(width: 420)
         .onDisappear { model.highlightedSessionId = nil }
+    }
+
+    private var mongoStatusColor: Color {
+        switch model.mongoStatus {
+        case .offline: .orange
+        case .connected(let backlog) where backlog > 0: .orange
+        default: .secondary
+        }
     }
 
     private func scroll(_ proxy: ScrollViewProxy) {
@@ -106,6 +122,22 @@ struct SettingsPanel: View {
                     value: binding(\.deadAfterHours), in: 1...72)
             Stepper("Hide ended sessions after \(model.settings.hideEndedAfterHours) h",
                     value: binding(\.hideEndedAfterHours), in: 1...168)
+            Divider().padding(.vertical, 4)
+            Text("Mongo URI (stored in the Keychain)").foregroundStyle(.secondary)
+            TextField("mongodb://127.0.0.1:27017/<db>?directConnection=true", text: $model.mongoURIDraft)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption.monospaced())
+            HStack {
+                Button("Test") { model.testMongo() }
+                    .disabled(model.mongoTesting || model.mongoURIDraft.isEmpty)
+                Button("Save") { model.saveMongoURI() }
+                if model.mongoTesting { ProgressView().controlSize(.small) }
+            }
+            if let result = model.mongoTestResult {
+                Text(result).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            Stepper("Keep Mongo history \(model.settings.retentionDays) days",
+                    value: binding(\.retentionDays), in: 1...365)
         }
         .font(.callout)
         .padding(12)
@@ -120,6 +152,8 @@ struct SettingsPanel: View {
 struct SessionRow: View {
     let session: Session
     var highlighted = false
+    var showHistory = false
+    var onHistory: () -> Void = {}
     let onMarkReviewed: () -> Void
 
     var body: some View {
@@ -145,6 +179,11 @@ struct SessionRow: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(stateColor)
                     Spacer()
+                    if showHistory {
+                        Button("History", action: onHistory)
+                            .buttonStyle(.link)
+                            .font(.caption)
+                    }
                     if session.state.canMarkReviewed {
                         Button("Mark reviewed", action: onMarkReviewed)
                             .buttonStyle(.link)
@@ -183,6 +222,116 @@ struct SessionRow: View {
         case .presumedDead: .gray
         case .working: .green
         default: .secondary
+        }
+    }
+}
+
+struct HistoryView: View {
+    @ObservedObject var model: HistoryModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.session.displayRepo).font(.headline)
+                Text([model.session.branch, String(model.session.id.prefix(8))].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.items) { item in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(item.ts, format: .dateTime.month(.abbreviated).day().hour().minute().second())
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 130, alignment: .leading)
+                            Text(item.name).font(.callout)
+                            if let detail = item.detail {
+                                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        Divider()
+                    }
+                    if let error = model.error {
+                        Text(error).foregroundStyle(.secondary).padding(12)
+                    } else if model.items.isEmpty && !model.loading {
+                        Text("No events stored for this session yet.").foregroundStyle(.secondary).padding(12)
+                    }
+                    if model.hasMore {
+                        Button("Load more") { model.loadMore() }
+                            .disabled(model.loading)
+                            .padding(12)
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 460, minHeight: 420)
+    }
+}
+
+struct StatsView: View {
+    @ObservedObject var model: StatsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Picker("Range", selection: $model.range) {
+                    ForEach(StatsRange.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 180)
+                Spacer()
+                if model.loading { ProgressView().controlSize(.small) }
+                Button("Refresh") { model.load() }
+            }
+            if let error = model.error {
+                Text(error).foregroundStyle(.secondary)
+            } else if let stats = model.stats {
+                Text("\(stats.sessions) sessions").font(.headline)
+                HStack(spacing: 24) {
+                    metric("Median wait for permission", stats.medianPermissionWait)
+                    metric("Median done → reviewed", stats.medianReviewDelay)
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        buckets("By state", stats.byState)
+                        buckets("By source", stats.bySource)
+                        buckets("By repo", stats.byRepo)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(minWidth: 420, minHeight: 460)
+    }
+
+    private func metric(_ title: String, _ value: TimeInterval?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value.map(StatsMath.format) ?? "–").font(.title3.monospacedDigit())
+        }
+    }
+
+    private func buckets(_ title: String, _ list: [Bucket]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline.weight(.semibold))
+            if list.isEmpty { Text("–").foregroundStyle(.secondary) }
+            ForEach(list) { b in
+                HStack {
+                    Text(b.key).lineLimit(1)
+                    Spacer()
+                    Text("\(b.count)").monospacedDigit().foregroundStyle(.secondary)
+                }
+                .font(.callout)
+            }
         }
     }
 }

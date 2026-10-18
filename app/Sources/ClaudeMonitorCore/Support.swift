@@ -4,6 +4,20 @@ public struct AppPaths: Sendable {
     public var eventsFile: URL
     public var snapshotFile: URL
     public var logFile: URL
+    /// State changes journaled for the Mongo sync (decisions.md D-013).
+    public var transitionsFile: URL
+    /// Mongo sync progress: how far each file has been written to Mongo.
+    public var syncStateFile: URL
+
+    public init(eventsFile: URL, snapshotFile: URL, logFile: URL,
+                transitionsFile: URL? = nil, syncStateFile: URL? = nil) {
+        let dir = snapshotFile.deletingLastPathComponent()
+        self.eventsFile = eventsFile
+        self.snapshotFile = snapshotFile
+        self.logFile = logFile
+        self.transitionsFile = transitionsFile ?? dir.appending(path: "transitions.jsonl")
+        self.syncStateFile = syncStateFile ?? dir.appending(path: "sync.json")
+    }
 
     /// Defaults per spec; CLAUDE_MONITOR_EVENTS_FILE overrides the events file (same as the hook).
     public static func standard(environment: [String: String] = ProcessInfo.processInfo.environment) -> AppPaths {
