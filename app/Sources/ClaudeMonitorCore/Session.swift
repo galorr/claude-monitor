@@ -1,0 +1,113 @@
+import Foundation
+
+public enum SessionSource: String, Codable, Sendable {
+    case terminal, desktop, unknown
+
+    /// decisions.md D-007: desktop if the process ancestry contains Claude.app (or the
+    /// desktop-bundled claude binary), terminal if there is a tty, else unknown.
+    public static func detect(_ e: HookEvent) -> SessionSource {
+        if let chain = e.procChain, chain.contains(where: { $0.contains("/Applications/Claude.app/") }) {
+            return .desktop
+        }
+        if let path = e.claudePath, path.contains("/Application Support/Claude/claude-code/") {
+            return .desktop
+        }
+        if let envNames = e.envNames, envNames.contains("CLAUDE_CODE_DESKTOP_APP_VERSION") {
+            return .desktop
+        }
+        if e.tty != nil { return .terminal }
+        return .unknown
+    }
+}
+
+public enum SessionState: String, Codable, Sendable, CaseIterable {
+    case idle
+    case working
+    case needsPermission = "needs_permission"
+    case waitingInput = "waiting_input"
+    case doneUnreviewed = "done_unreviewed"
+    case stale
+    case reviewed
+    case presumedDead = "presumed_dead"
+    case closed
+
+    /// Lower = more urgent. Spec order: needs_permission > waiting_input >
+    /// done_unreviewed > stale > working > idle > reviewed (then dead/closed).
+    public var urgencyRank: Int {
+        switch self {
+        case .needsPermission: 0
+        case .waitingInput: 1
+        case .doneUnreviewed: 2
+        case .stale: 3
+        case .working: 4
+        case .idle: 5
+        case .reviewed: 6
+        case .presumedDead: 7
+        case .closed: 8
+        }
+    }
+
+    /// States that count towards the menu-bar badge.
+    public var needsAttention: Bool {
+        self == .needsPermission || self == .waitingInput || self == .doneUnreviewed
+    }
+
+    public var canMarkReviewed: Bool { self == .doneUnreviewed || self == .waitingInput }
+
+    public var displayName: String {
+        switch self {
+        case .idle: "Idle"
+        case .working: "Working"
+        case .needsPermission: "Needs permission"
+        case .waitingInput: "Waiting for input"
+        case .doneUnreviewed: "Done"
+        case .stale: "Stale"
+        case .reviewed: "Reviewed"
+        case .presumedDead: "Presumed dead"
+        case .closed: "Closed"
+        }
+    }
+}
+
+/// `epic/<KEY>/T<n>` is a fixed contract with the epic-planner plugin (spec).
+public struct EpicRef: Equatable, Sendable {
+    public var epicKey: String
+    public var taskId: String
+
+    public static func parse(branch: String?) -> EpicRef? {
+        guard let branch else { return nil }
+        let parts = branch.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0] == "epic", !parts[1].isEmpty else { return nil }
+        let task = parts[2]
+        guard task.count > 1, task.first == "T", task.dropFirst().allSatisfy(\.isNumber) else { return nil }
+        return EpicRef(epicKey: String(parts[1]), taskId: String(task))
+    }
+}
+
+public struct Session: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var cwd: String?
+    public var repo: String?
+    public var branch: String?
+    public var epicKey: String?
+    public var taskId: String?
+    public var source: SessionSource
+    public var tty: String?
+    public var claudePid: Int?
+    public var state: SessionState
+    public var lastEventAt: Date
+    public var lastMessage: String?
+    public var acknowledgedAt: Date?
+    public var updatedAt: Date
+
+    public init(id: String, at: Date) {
+        self.id = id
+        source = .unknown
+        state = .idle
+        lastEventAt = at
+        updatedAt = at
+    }
+
+    /// Short name for the row: git root folder, else cwd folder, else the id.
+    public var displayRepo: String { repo ?? String(id.prefix(8)) }
+}

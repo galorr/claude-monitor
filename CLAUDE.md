@@ -3,7 +3,7 @@
 macOS menu-bar app that tracks local Claude Code sessions (terminal + desktop).
 Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log every one).
 
-**Current phase:** 1, the core app (SwiftPM). Phase 0 is done: capture results are in decisions D-007 and D-008.
+**Current phase:** 2, notifications, review and sweeper. Phase 1 (core app) is done.
 
 ## Rules
 - Work phase by phase. Stop at each phase end with test instructions, then commit.
@@ -15,7 +15,14 @@ Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log ever
   `~/Library/Application Support/ClaudeMonitor/events.jsonl` (override: `CLAUDE_MONITOR_EVENTS_FILE`)
 - `hooks/settings-snippet.json`: hooks block to merge into `~/.claude/settings.json`
 - `fixtures/`: anonymised captured payloads (test inputs)
-- `app/`: Swift package + Xcode project (from Phase 1)
+- `app/`: Swift package (no Xcode, D-009). `ClaudeMonitorCore` = all logic; `ClaudeMonitor` = SwiftUI shell
+
+## Build & test the app
+```bash
+bash app/scripts/test.sh        # unit tests (not bare `swift test`, see D-009)
+bash app/scripts/build-app.sh   # → app/build/ClaudeMonitor.app
+```
+State: `~/Library/Application Support/ClaudeMonitor/state.json`; log: `~/Library/Logs/ClaudeMonitor/app.log`.
 
 ## Test the hook
 ```bash

@@ -107,11 +107,14 @@ Observed payloads (they replace the D-001 guesses):
 3. otherwise `unknown`.
 Backup signal on SessionStart only: `env_names` contains `CLAUDE_CODE_DESKTOP_APP_VERSION` (desktop only).
 
-**Gaps** (the user chose to move on, so these are accepted): no PermissionRequest from a terminal
-session (all ran in bypassPermissions), no StopFailure, no `idle_prompt`/user-initiated
+**Gaps** (the user chose to move on, so these are accepted): no StopFailure, no `idle_prompt`/user-initiated
 SessionEnd from a desktop session. Sessions can appear with **no SessionStart** (started
 before hooks were installed) or SessionEnd-only (VS Code terminals). The app must create
 a session from any first event.
+Added during Phase 1 testing: `fixtures/terminal-permission-2026-10-18.jsonl`, a terminal session
+in `default` mode with two prompts. The first had PermissionRequest followed 6s later by the Notification,
+as on desktop. The second was approved within 6s, so **no Notification fired at all**: PermissionRequest
+is required, not just faster.
 
 ## D-008 — Event → state mapping (refines the spec's Phase 1 state machine)
 | Event | Transition |
@@ -130,3 +133,30 @@ a session from any first event.
 | "Mark reviewed" | done_unreviewed / waiting_input → reviewed |
 | any event on a closed session | reopens it (resume) |
 Events with `ts` older than the session's `last_event_at` update the metadata only, not the state.
+
+## D-009 — No Xcode: SwiftPM-only build (deviation from "SwiftPM + Xcode project")
+This Mac has the Command Line Tools only (Swift 6.4, macOS 27 SDK), and no Xcode.
+- `app/` is a plain Swift package: `ClaudeMonitorCore` (all logic, no UI imports),
+  `ClaudeMonitor` (SwiftUI shell), `ClaudeMonitorCoreTests` (Swift Testing).
+- `app/scripts/build-app.sh` wraps the release binary into `app/build/ClaudeMonitor.app`
+  (Info.plist with `LSUIElement`, ad-hoc `codesign`). This also gives the bundle identity
+  that UNUserNotificationCenter needs in Phase 2.
+- The CLT have no SwiftUI macro plugins, so `@State` and `@Observable` fail to compile.
+  The UI therefore uses `ObservableObject` + `@Published` + `@ObservedObject` (property wrappers, not macros).
+- `swift test` intermittently fails with "plugin for module 'TestingMacros' not found":
+  SwiftPM sometimes omits `-plugin-path` for the test module. `app/scripts/test.sh`
+  passes it explicitly, and it passed 5 out of 5 runs. Always use the script.
+- If Xcode is installed later, an Xcode project can be added; nothing here depends on its absence.
+
+## D-010 — Persistence of live state across relaunches
+The spec persists `read_offset`, but sessions live in memory, and `acknowledged_at`
+(Mark reviewed) exists nowhere in the events file. So the app saves one snapshot,
+`~/Library/Application Support/ClaudeMonitor/state.json` = {cursor (offset + inode), sessions},
+written atomically after each ingest. On launch it loads the snapshot and continues from the cursor.
+If the snapshot is missing, unreadable or from another version, it replays events.jsonl from 0
+(the file is the source of truth). Rotation is detected when the inode changes or the size drops below
+the offset: reading restarts at 0 and a line is logged.
+File watching: a DispatchSource on the file (write/extend/delete/rename) for instant updates,
+plus a 2s poll that catches a file that doesn't exist yet or was replaced.
+"Mark reviewed" is in the Phase 1 UI (the spec puts it in Phase 2) because without it the
+badge can only grow. "Review all done" stays in Phase 2.
