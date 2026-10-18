@@ -8,7 +8,7 @@ import Testing
         let lines = try Fixture.lines()
         var store = SessionStore()
         var problems: [String] = []
-        let malformed = MonitorEngine.process(lines, into: &store) { problems.append($0) }
+        let malformed = MonitorEngine.process(lines, into: &store) { problems.append($0) }.malformed
         #expect(lines.count == 80)
         #expect(malformed == 0, "\(problems)")
         #expect(store.sessions.count == 10)

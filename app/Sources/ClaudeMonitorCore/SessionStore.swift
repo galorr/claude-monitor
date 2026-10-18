@@ -8,20 +8,28 @@ public struct SessionStore: Codable, Equatable, Sendable {
 
     public init() {}
 
-    public mutating func apply(_ e: HookEvent) {
+    /// Applies one event. Returns the state change it caused, if any (nil also for
+    /// late events, which only fill in metadata).
+    @discardableResult
+    public mutating func apply(_ e: HookEvent) -> StateChange? {
         let existing = sessions[e.sessionId]
         var s = existing ?? Session(id: e.sessionId, at: e.ts)
         // Async hooks can land out of order: an older event updates metadata only.
         let isLate = existing != nil && e.ts < s.lastEventAt
+        var change: StateChange?
 
         absorbMetadata(e, into: &s, overwrite: !isLate)
         if !isLate {
             // The permission_prompt text is generic; keep PermissionRequest's "Permission: <tool>".
             let keepMessage = s.state == .needsPermission && e.notificationType == "permission_prompt"
             s.lastEventAt = e.ts
+            let previous = existing?.state
             if let next = Self.transition(from: s.state, on: e), next != s.state {
                 s.state = next
                 if next != .reviewed { s.acknowledgedAt = nil }
+            }
+            if s.state != previous {
+                change = StateChange(sessionId: s.id, from: previous, to: s.state, at: e.ts)
             }
             if !keepMessage, let msg = Self.message(for: e) {
                 s.lastMessage = String(msg.prefix(Self.maxMessageLength))
@@ -29,6 +37,7 @@ public struct SessionStore: Codable, Equatable, Sendable {
         }
         s.updatedAt = max(s.updatedAt, e.ts)
         sessions[e.sessionId] = s
+        return change
     }
 
     /// User action. Returns false if the session is not in a reviewable state.
@@ -40,6 +49,52 @@ public struct SessionStore: Codable, Equatable, Sendable {
         s.updatedAt = max(s.updatedAt, at)
         sessions[id] = s
         return true
+    }
+
+    /// "Review all done": every done_unreviewed session becomes reviewed.
+    /// waiting_input is left alone, since it still needs an answer. Returns how many changed.
+    @discardableResult
+    public mutating func markAllDoneReviewed(at: Date) -> Int {
+        let ids = sessions.values.filter { $0.state == .doneUnreviewed }.map(\.id)
+        for id in ids { markReviewed(id, at: at) }
+        return ids.count
+    }
+
+    /// Periodic sweep (decisions.md D-011). Order of rules:
+    /// 1. no event for `deadAfter` → presumed_dead (any open state)
+    /// 2. an active session whose claude process is gone → presumed_dead
+    /// 3. working with no event for `staleAfter` → stale
+    public mutating func sweep(now: Date, settings: MonitorSettings,
+                               isAlive: (Int) -> Bool) -> [StateChange] {
+        var changes: [StateChange] = []
+        for id in sessions.keys.sorted() {
+            guard var s = sessions[id], s.state != .closed, s.state != .presumedDead else { continue }
+            let quiet = now.timeIntervalSince(s.lastEventAt)
+            let next: SessionState?
+            if quiet > settings.deadAfter {
+                next = .presumedDead
+            } else if s.state.isActive, let pid = s.claudePid, !isAlive(pid) {
+                next = .presumedDead
+            } else if s.state == .working, quiet > settings.staleAfter {
+                next = .stale
+            } else {
+                next = nil
+            }
+            guard let next else { continue }
+            changes.append(StateChange(sessionId: id, from: s.state, to: next, at: now))
+            s.state = next
+            s.updatedAt = max(s.updatedAt, now)
+            sessions[id] = s
+        }
+        return changes
+    }
+
+    /// The list as shown: closed / presumed_dead sessions disappear once their last
+    /// event is older than `hideEndedAfter`.
+    public func visible(now: Date, settings: MonitorSettings) -> [Session] {
+        sorted.filter {
+            !($0.state.isEnded && now.timeIntervalSince($0.lastEventAt) > settings.hideEndedAfter)
+        }
     }
 
     /// Sorted by urgency, then most recent event first.

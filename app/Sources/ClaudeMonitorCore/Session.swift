@@ -54,6 +54,14 @@ public enum SessionState: String, Codable, Sendable, CaseIterable {
 
     public var canMarkReviewed: Bool { self == .doneUnreviewed || self == .waitingInput }
 
+    /// A live claude process is expected: the sweeper checks its pid.
+    /// (done/reviewed sessions are left to the time-based rule: the result still matters.)
+    public var isActive: Bool {
+        self == .idle || self == .working || self == .needsPermission || self == .waitingInput || self == .stale
+    }
+
+    public var isEnded: Bool { self == .closed || self == .presumedDead }
+
     public var displayName: String {
         switch self {
         case .idle: "Idle"
@@ -110,4 +118,48 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
 
     /// Short name for the row: git root folder, else cwd folder, else the id.
     public var displayRepo: String { repo ?? String(id.prefix(8)) }
+}
+
+public struct StateChange: Equatable, Sendable {
+    public var sessionId: String
+    /// nil when the event created the session.
+    public var from: SessionState?
+    public var to: SessionState
+    public var at: Date
+}
+
+/// User-tunable thresholds (spec Phase 2). Stored by the app in UserDefaults.
+public struct MonitorSettings: Codable, Equatable, Sendable {
+    public var staleAfterMinutes = 10
+    public var deadAfterHours = 6
+    public var hideEndedAfterHours = 24
+    public var notificationsEnabled = true
+
+    public init() {}
+
+    public var staleAfter: TimeInterval { TimeInterval(staleAfterMinutes * 60) }
+    public var deadAfter: TimeInterval { TimeInterval(deadAfterHours * 3600) }
+    public var hideEndedAfter: TimeInterval { TimeInterval(hideEndedAfterHours * 3600) }
+}
+
+/// Which state changes produce a macOS notification, and its text.
+public enum NotificationPolicy {
+    public static let notifyingStates: Set<SessionState> = [.needsPermission, .waitingInput, .doneUnreviewed]
+
+    /// Changes older than this (replay at launch, backlog after the app was off) stay silent.
+    public static let maxAge: TimeInterval = 5 * 60
+
+    /// One notification per transition INTO a notifying state, only for fresh events.
+    public static func shouldNotify(_ change: StateChange, now: Date) -> Bool {
+        notifyingStates.contains(change.to)
+            && change.from != change.to
+            && now.timeIntervalSince(change.at) <= maxAge
+    }
+
+    public static func content(for session: Session) -> (title: String, body: String) {
+        var title = "\(session.displayRepo): \(session.state.displayName)"
+        if let task = session.taskId { title += " (\(task))" }
+        let body = session.lastMessage ?? session.branch ?? ""
+        return (title, body)
+    }
 }

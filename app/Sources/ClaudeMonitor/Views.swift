@@ -31,6 +31,10 @@ struct SessionListView: View {
                 if model.attentionCount > 0 {
                     Text("\(model.attentionCount) need you").foregroundStyle(.secondary)
                 }
+                if model.hasDoneSessions {
+                    Button("Review all done") { model.markAllDoneReviewed() }
+                        .buttonStyle(.link)
+                }
             }
             .padding(12)
             Divider()
@@ -42,24 +46,38 @@ struct SessionListView: View {
             } else {
                 // A ScrollView in a MenuBarExtra window collapses to zero height unless
                 // given one, so size it to the measured rows, capped.
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(model.sessions) { session in
-                            SessionRow(session: session) { model.markReviewed(session) }
-                            Divider()
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(model.sessions) { session in
+                                SessionRow(session: session,
+                                           highlighted: session.id == model.highlightedSessionId) {
+                                    model.markReviewed(session)
+                                }
+                                .id(session.id)
+                                Divider()
+                            }
                         }
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+                        })
                     }
-                    .background(GeometryReader { geo in
-                        Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
-                    })
-                }
-                .frame(height: min(max(model.listHeight, 60), 520))
-                .onPreferenceChange(ContentHeightKey.self) { height in
-                    MainActor.assumeIsolated { model.listHeight = height }
+                    .frame(height: min(max(model.listHeight, 60), 520))
+                    .onPreferenceChange(ContentHeightKey.self) { height in
+                        MainActor.assumeIsolated { model.listHeight = height }
+                    }
+                    .onAppear { scroll(proxy) }
+                    .onChange(of: model.highlightedSessionId) { scroll(proxy) }
                 }
             }
             Divider()
+            if model.showSettings {
+                SettingsPanel(model: model)
+                Divider()
+            }
             HStack {
+                Button(model.showSettings ? "Hide settings" : "Settings…") { model.showSettings.toggle() }
+                    .buttonStyle(.link)
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
@@ -67,11 +85,41 @@ struct SessionListView: View {
             .padding(8)
         }
         .frame(width: 420)
+        .onDisappear { model.highlightedSessionId = nil }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let id = model.highlightedSessionId else { return }
+        proxy.scrollTo(id, anchor: .center)
+    }
+}
+
+struct SettingsPanel: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Notifications", isOn: binding(\.notificationsEnabled))
+            Stepper("Stale after \(model.settings.staleAfterMinutes) min of no events",
+                    value: binding(\.staleAfterMinutes), in: 1...240)
+            Stepper("Presumed dead after \(model.settings.deadAfterHours) h of no events",
+                    value: binding(\.deadAfterHours), in: 1...72)
+            Stepper("Hide ended sessions after \(model.settings.hideEndedAfterHours) h",
+                    value: binding(\.hideEndedAfterHours), in: 1...168)
+        }
+        .font(.callout)
+        .padding(12)
+    }
+
+    private func binding<T>(_ keyPath: WritableKeyPath<MonitorSettings, T>) -> Binding<T> {
+        Binding(get: { model.settings[keyPath: keyPath] },
+                set: { value in model.updateSettings { $0[keyPath: keyPath] = value } })
     }
 }
 
 struct SessionRow: View {
     let session: Session
+    var highlighted = false
     let onMarkReviewed: () -> Void
 
     var body: some View {
@@ -110,6 +158,7 @@ struct SessionRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .background(highlighted ? Color.accentColor.opacity(0.15) : Color.clear)
     }
 
     private var branchDetail: String? {
@@ -131,6 +180,7 @@ struct SessionRow: View {
         case .waitingInput: .orange
         case .doneUnreviewed: .blue
         case .stale: .yellow
+        case .presumedDead: .gray
         case .working: .green
         default: .secondary
         }

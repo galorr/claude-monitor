@@ -77,7 +77,7 @@ import Testing
         ]
         var store = SessionStore()
         var reports: [String] = []
-        let malformed = MonitorEngine.process(lines, into: &store) { reports.append($0) }
+        let malformed = MonitorEngine.process(lines, into: &store) { reports.append($0) }.malformed
         #expect(malformed == 4)
         #expect(reports.count == 4)
         #expect(store.sessions["s1"]?.state == .working)
@@ -115,7 +115,7 @@ import Testing
 
         let updates = AsyncStream<[Session]>.makeStream()
         let engine = MonitorEngine(paths: paths, log: AppLog(url: paths.logFile))
-        engine.start { sessions, _ in updates.continuation.yield(sessions) }
+        engine.start { updates.continuation.yield($0.sessions) }
         defer { engine.stop() }
         var iterator = updates.stream.makeAsyncIterator()
 

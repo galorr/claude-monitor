@@ -160,3 +160,45 @@ File watching: a DispatchSource on the file (write/extend/delete/rename) for ins
 plus a 2s poll that catches a file that doesn't exist yet or was replaced.
 "Mark reviewed" is in the Phase 1 UI (the spec puts it in Phase 2) because without it the
 badge can only grow. "Review all done" stays in Phase 2.
+
+## D-011 — Sweeper and notification rules (Phase 2)
+**Sweeper** runs at launch, then every 60s, and whenever settings change. For each session not closed/presumed_dead, the first matching rule wins:
+1. no event for `deadAfter` (default 6h) → presumed_dead, in any open state (spec rule);
+2. **an active session (idle/working/needs_permission/waiting_input/stale) whose `claude_pid`
+   no longer exists** (`kill(pid,0)` fails with anything other than EPERM) → presumed_dead. This is an addition to the spec: without it a killed
+   terminal would show `working` → `stale` for 6h, failing the spec's own Phase 2 test.
+   done_unreviewed/reviewed are exempt because the result still needs reviewing after the process exits.
+   A session without a pid (old hook lines) is judged only by time. PID reuse could keep a dead session "alive"
+   until the 6h rule; this is accepted.
+3. working with no event for `staleAfter` (default 10 min) → stale.
+Any later event revives the session through the normal transitions. closed/presumed_dead sessions are hidden from
+the list once their last event is older than `hideEndedAfter` (24h); they stay in state.json.
+Thresholds and a notifications on/off switch are in an inline Settings panel, saved in UserDefaults.
+
+**Notifications** go out on a transition INTO needs_permission / waiting_input / done_unreviewed, with these extra rules:
+- at most one per session per ingest batch, and only if the session is *still* in that state at the end of the batch
+  (a prompt approved in the same batch stays silent);
+- not for changes older than 5 min. Replaying the file at launch and the backlog after the app was off stay silent;
+- the `idle_prompt` reminder after Stop changes no state, so it can't send a second notification;
+- the identifier is `<session>.<state>`, so a repeat replaces the banner instead of stacking. Banners are removed when the
+  session leaves an attention state or is marked reviewed.
+"Review all done" reviews done_unreviewed only. waiting_input still needs an answer.
+
+## D-012 — Notification click opens a session window
+SwiftUI has no API to open a MenuBarExtra window programmatically. The first attempt clicked the
+status item's button (found by walking `NSStatusBarWindow`'s views). The log proved the click arrived and
+the button was pressed, but the MenuBarExtra ignored the synthetic click and nothing opened (2026-10-18).
+Now a notification click opens a small floating `NSWindow` (`SessionWindow`) at the top right of the
+screen, hosting the same `SessionListView` with the clicked session highlighted and scrolled into view.
+It uses public API only. The menu-bar dropdown is unchanged. Notifications need the .app bundle; when run unbundled (`swift run`) they are
+disabled with a log line.
+Authorization is requested on `NSApplication.didFinishLaunchingNotification`, not in `App.init`.
+Requesting from `App.init` failed immediately with UNErrorDomain Code=1 "Notifications are not allowed
+for this application", and no prompt was shown (seen in testing on 2026-10-18).
+
+Testing note: closing a terminal window is NOT a kill. claude gets SIGHUP, fires SessionEnd
+(`reason: other`) and the session is `closed`. Only an abrupt death (`kill -9`, crash, power loss)
+leaves no SessionEnd, so that is the case where the pid check turns it `presumed_dead`.
+Headless `claude -p` (seen in Phase 2 testing): the process exits right after the turn, so the
+async `Stop` hook is sometimes dropped and only SessionStart/UserPromptSubmit/SessionEnd arrive.
+Interactive sessions are unaffected. Headless runs are not a target of this app.

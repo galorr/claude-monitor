@@ -3,7 +3,7 @@
 macOS menu-bar app that tracks local Claude Code sessions (terminal + desktop).
 Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log every one).
 
-**Current phase:** 2, notifications, review and sweeper. Phase 1 (core app) is done.
+**Current phase:** 3, persist to Mongo with MongoKitten. Phases 0–2 are done.
 
 ## Rules
 - Work phase by phase. Stop at each phase end with test instructions, then commit.
