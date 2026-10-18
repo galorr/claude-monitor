@@ -16,3 +16,4 @@ xcuserdata/
 .env.*
 *.local.json
 secrets/
+.claude-session-state.json
