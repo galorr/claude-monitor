@@ -1,0 +1,18 @@
+# macOS / Xcode / SwiftPM
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.dmg
+*.app
+
+# Local data & secrets — never commit
+*.jsonl
+!fixtures/**/*.jsonl
+.env
+.env.*
+*.local.json
+secrets/
