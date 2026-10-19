@@ -304,3 +304,8 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
   reproduced (4/4 runs passed after). Every store call in `SyncEngine` now has a time limit
   (30 s, then reconnect), so a hung connection can't stall the sync while it says "connected". The
   Mongo test suite has a 2-minute limit.
+
+## D-016 — Opaque background for the menu-bar list
+- The MenuBarExtra window's default glass background turned a muddy, low-contrast grey when the
+  list was short and the window sat over a light page. `SessionListView` now draws
+  `windowBackgroundColor` behind its content (follows light/dark mode).

@@ -111,6 +111,9 @@ struct SessionListView: View {
             .padding(8)
         }
         .frame(width: 420)
+        // The MenuBarExtra window's default glass turns a muddy, low-contrast grey when
+        // the window is short over a light background; an opaque window colour keeps it legible.
+        .background(Color(nsColor: .windowBackgroundColor))
         .onDisappear { model.highlightedSessionId = nil }
     }
 
