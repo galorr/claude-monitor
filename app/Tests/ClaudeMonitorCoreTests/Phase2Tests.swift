@@ -180,12 +180,8 @@ import Testing
         let c = NotificationPolicy.content(for: s)
         #expect(c.title == "app: Needs permission (T3)")
         #expect(c.body == "Permission: Write")
-        // The subtitle says where the terminal is; the home folder is shortened to ~ (D-017).
-        #expect(c.subtitle.hasSuffix("  ·  epic/PROJ-7/T3"))
-        #expect(NotificationPolicy.abbreviateHome("/Users/me/x/app/sub", home: "/Users/me") == "~/x/app/sub")
-        #expect(NotificationPolicy.abbreviateHome("/Users/me", home: "/Users/me/") == "~")
-        #expect(NotificationPolicy.abbreviateHome("/Users/meow/x", home: "/Users/me") == "/Users/meow/x")
-        #expect(NotificationPolicy.abbreviateHome("/opt/x", home: "/Users/me") == "/opt/x")
+        // The subtitle says where the terminal is: the folder name, then the branch (D-017).
+        #expect(c.subtitle == "sub  ·  epic/PROJ-7/T3")
     }
 }
 

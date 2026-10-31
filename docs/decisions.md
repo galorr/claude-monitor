@@ -335,7 +335,7 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
 - **Notification icon:** each banner gets a `UNNotificationAttachment` thumbnail drawn from an
   SF Symbol on a tile in the row's state colour (red hand = permission, orange bubble = input,
   blue check = done). The attachment file is moved by the system, so a cached render is
-  copied per post. The subtitle shows where the terminal is (cwd with ~, then the branch); the
+  copied per post. The subtitle shows where the terminal is (the cwd folder name, then the branch); the
   body is the last message. The app also gets an icon now (`scripts/make-icon.swift`, rendered at build
   time with AppKit + iconutil, `CFBundleIconFile`), which is what the banner's app badge shows. That badge is macOS's own app-icon slot and
   cannot be removed or replaced per notification; Notification Center caches it per bundle id,
