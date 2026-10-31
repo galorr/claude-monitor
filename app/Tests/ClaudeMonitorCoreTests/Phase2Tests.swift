@@ -174,12 +174,18 @@ import Testing
 
     @Test func contentUsesRepoStateTaskAndMessage() {
         let s = store([
-            event("SessionStart", at: 0, ["git_root": "/x/app", "git_branch": "epic/PROJ-7/T3"]),
+            event("SessionStart", at: 0, ["cwd": "/Users/me/x/app/sub", "git_root": "/Users/me/x/app", "git_branch": "epic/PROJ-7/T3"]),
             event("PermissionRequest", at: 1, ["tool_name": "Write"]),
         ]).sessions["s1"]!
         let c = NotificationPolicy.content(for: s)
         #expect(c.title == "app: Needs permission (T3)")
         #expect(c.body == "Permission: Write")
+        // The subtitle says where the terminal is; the home folder is shortened to ~ (D-017).
+        #expect(c.subtitle.hasSuffix("  ·  epic/PROJ-7/T3"))
+        #expect(NotificationPolicy.abbreviateHome("/Users/me/x/app/sub", home: "/Users/me") == "~/x/app/sub")
+        #expect(NotificationPolicy.abbreviateHome("/Users/me", home: "/Users/me/") == "~")
+        #expect(NotificationPolicy.abbreviateHome("/Users/meow/x", home: "/Users/me") == "/Users/meow/x")
+        #expect(NotificationPolicy.abbreviateHome("/opt/x", home: "/Users/me") == "/opt/x")
     }
 }
 

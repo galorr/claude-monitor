@@ -40,6 +40,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         let text = NotificationPolicy.content(for: session)
         let content = UNMutableNotificationContent()
         content.title = text.title
+        content.subtitle = text.subtitle
         content.body = text.body
         content.sound = .default
         content.threadIdentifier = session.id

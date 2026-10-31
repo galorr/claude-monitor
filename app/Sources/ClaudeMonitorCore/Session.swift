@@ -183,10 +183,23 @@ public enum NotificationPolicy {
             && now.timeIntervalSince(change.at) <= maxAge
     }
 
-    public static func content(for session: Session) -> (title: String, body: String) {
+    public static func content(for session: Session) -> (title: String, subtitle: String, body: String) {
         var title = "\(session.displayRepo): \(session.state.displayName)"
         if let task = session.taskId { title += " (\(task))" }
-        let body = session.lastMessage ?? session.branch ?? ""
-        return (title, body)
+        // Where the terminal is: the working folder (home shown as ~), then the branch.
+        var subtitle = session.cwd.map { abbreviateHome($0) } ?? ""
+        if let branch = session.branch {
+            subtitle += subtitle.isEmpty ? branch : "  ·  \(branch)"
+        }
+        let body = session.lastMessage ?? ""
+        return (title, subtitle, body)
+    }
+
+    /// "/Users/me/git/x" → "~/git/x".
+    public static func abbreviateHome(_ path: String,
+                                      home: String = FileManager.default.homeDirectoryForCurrentUser.path) -> String {
+        let home = home.hasSuffix("/") ? String(home.dropLast()) : home
+        guard path == home || path.hasPrefix(home + "/") else { return path }
+        return "~" + path.dropFirst(home.count)
     }
 }

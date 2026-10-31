@@ -335,8 +335,12 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
 - **Notification icon:** each banner gets a `UNNotificationAttachment` thumbnail drawn from an
   SF Symbol on a tile in the row's state colour (red hand = permission, orange bubble = input,
   blue check = done). The attachment file is moved by the system, so a cached render is
-  copied per post. The app also gets an icon now (`scripts/make-icon.swift`, rendered at build
-  time with AppKit + iconutil, `CFBundleIconFile`), which is what the banner's app badge shows.
+  copied per post. The subtitle shows where the terminal is (cwd with ~, then the branch); the
+  body is the last message. The app also gets an icon now (`scripts/make-icon.swift`, rendered at build
+  time with AppKit + iconutil, `CFBundleIconFile`), which is what the banner's app badge shows. That badge is macOS's own app-icon slot and
+  cannot be removed or replaced per notification; Notification Center caches it per bundle id,
+  so after the first build with an icon it needed `lsregister -f` + a restart of
+  usernoted/NotificationCenter (or a logout) to stop showing the old blank tile.
 - **Window sizing (the "empty area" bug):** the MenuBarExtra `.window` panel grows with its
   content but never shrinks back; after Settings was folded away the list sat in the middle
   of a tall window. `MenuBarWindowFitter`, an NSView behind the content, resizes the panel to
