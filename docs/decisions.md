@@ -309,3 +309,39 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
 - The MenuBarExtra window's default glass background turned a muddy, low-contrast grey when the
   list was short and the window sat over a light page. `SessionListView` now draws
   `windowBackgroundColor` behind its content (follows light/dark mode).
+
+## D-017 — Background work, artifacts, notification icon, window sizing
+- **Background section:** Claude Code reports background work in the hook payloads the app
+  already receives, so no new hook event is registered. A Bash call with
+  `run_in_background` returns `backgroundTaskId`; an async `Agent` call returns `agentId`
+  (`status: async_launched`); and every `Stop` carries `background_tasks`, the list of what
+  is still running (`id`, `type` shell|subagent, `status`, `description`, `command`,
+  `agent_type`). Hook lines were already passing `tool_input` / `tool_response` through.
+- **Completion is inferred**, since no registered hook fires when a task ends: a Stop whose
+  `background_tasks` no longer lists a task finishes it at that Stop (a task-complete notice
+  wakes the model, so a Stop follows soon after); SessionEnd and a presumed-dead session
+  finish all their tasks. A truncated Stop line (no field) changes nothing. Out-of-order
+  async hooks: a Stop older than a task's start leaves it running; a task first seen in a
+  Stop snapshot is created from it. Finished tasks stay listed for 1 h and are dropped by the
+  sweep after `hideEndedAfter`. Sync `Agent` calls are not tasks (the turn waited for them).
+- **Artifacts section:** `PostToolUse` for the `Artifact` tool with `action` publish (or
+  omitted) and a `url` in the response records an artifact keyed by URL (title, icon, repo,
+  publish count); `delete` removes it; read/list/open/pin are ignored. Newest 20 shown, 30-day
+  retention. Click opens the URL in the browser.
+- Both live in `SessionStore` (so they replay with the events file and persist in state.json);
+  old snapshots decode with them empty. Existing state.json is not replayed, so the sections
+  fill as new events arrive. Task ids are only unique per session: the key is `<session>:<id>`.
+  Sections are collapsible (remembered) and hidden when empty.
+- **Notification icon:** each banner gets a `UNNotificationAttachment` thumbnail drawn from an
+  SF Symbol on a tile in the row's state colour (red hand = permission, orange bubble = input,
+  blue check = done). The attachment file is moved by the system, so a cached render is
+  copied per post. The app also gets an icon now (`scripts/make-icon.swift`, rendered at build
+  time with AppKit + iconutil, `CFBundleIconFile`), which is what the banner's app badge shows.
+- **Window sizing (the "empty area" bug):** the MenuBarExtra `.window` panel grows with its
+  content but never shrinks back; after Settings was folded away the list sat in the middle
+  of a tall window. `MenuBarWindowFitter`, an NSView behind the content, resizes the panel to
+  the content on every layout, top edge fixed. Titled windows (hotkey / notification click) are
+  left alone. The empty state is now a centred message (events path in its tooltip) and the
+  header says "Nothing needs you" when all is quiet.
+- **Noted, not changed:** the hook writes `tool_input.command` verbatim (truncated at 400
+  chars), so secrets passed on a command line end up in events.jsonl and Mongo.

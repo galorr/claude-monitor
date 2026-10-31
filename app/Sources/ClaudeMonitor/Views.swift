@@ -30,6 +30,8 @@ struct SessionListView: View {
                 Spacer()
                 if model.attentionCount > 0 {
                     Text("\(model.attentionCount) need you").foregroundStyle(.secondary)
+                } else if !model.sessions.isEmpty {
+                    Text("Nothing needs you").foregroundStyle(.secondary)
                 }
                 if model.hasDoneSessions {
                     Button("Review all done") { model.markAllDoneReviewed() }
@@ -45,11 +47,8 @@ struct SessionListView: View {
                     .padding(.bottom, 8)
             }
             Divider()
-            if model.sessions.isEmpty {
-                Text("No sessions yet.\nEvents file: \(model.paths.eventsFile.path)")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .padding(12)
+            if model.sessions.isEmpty && model.tasks.isEmpty && model.artifacts.isEmpty {
+                EmptyState(hooksHealthy: model.hookStatus.isHealthy, eventsFile: model.paths.eventsFile.path)
             } else {
                 // A ScrollView in a MenuBarExtra window collapses to zero height unless
                 // given one, so size it to the measured rows, capped.
@@ -67,6 +66,25 @@ struct SessionListView: View {
                                     Divider()
                                     if !model.isCollapsed(group.epicKey) {
                                         ForEach(group.sessions) { row($0, inEpic: true) }
+                                    }
+                                }
+                            }
+                            if !model.tasks.isEmpty {
+                                section(Self.backgroundSection, title: "Background",
+                                        summary: Self.taskSummary(running: model.runningTaskCount, total: model.tasks.count),
+                                        live: model.runningTaskCount > 0) {
+                                    ForEach(model.tasks) { task in
+                                        BackgroundJobRow(task: task) { model.open(task) }
+                                        Divider()
+                                    }
+                                }
+                            }
+                            if !model.artifacts.isEmpty {
+                                section(Self.artifactsSection, title: "Artifacts",
+                                        summary: "\(model.artifacts.count)", live: false) {
+                                    ForEach(model.artifacts) { artifact in
+                                        ArtifactRow(artifact: artifact) { model.open(artifact) }
+                                        Divider()
                                     }
                                 }
                             }
@@ -114,7 +132,27 @@ struct SessionListView: View {
         // The MenuBarExtra window's default glass turns a muddy, low-contrast grey when
         // the window is short over a light background; an opaque window colour keeps it legible.
         .background(Color(nsColor: .windowBackgroundColor))
+        // …and that window never shrinks back after the content got shorter (D-017).
+        .background(MenuBarWindowFitter())
         .onDisappear { model.highlightedSessionId = nil }
+    }
+
+    static let backgroundSection = "background"
+    static let artifactsSection = "artifacts"
+
+    static func taskSummary(running: Int, total: Int) -> String {
+        if running == 0 { return "\(total) finished" }
+        return running == total ? "\(running) running" : "\(running) running, \(total - running) finished"
+    }
+
+    @ViewBuilder
+    private func section<Rows: View>(_ key: String, title: String, summary: String, live: Bool,
+                                     @ViewBuilder rows: () -> Rows) -> some View {
+        SectionHeader(title: title, summary: summary, live: live, collapsed: model.isSectionCollapsed(key)) {
+            model.toggleSection(key)
+        }
+        Divider()
+        if !model.isSectionCollapsed(key) { rows() }
     }
 
     @ViewBuilder
@@ -439,5 +477,160 @@ struct EpicHeader: View {
         .background(Color.primary.opacity(0.04))
         .contentShape(Rectangle())
         .onTapGesture(perform: onToggle)
+    }
+}
+
+
+/// Shown when there is nothing to list at all.
+struct EmptyState: View {
+    let hooksHealthy: Bool
+    let eventsFile: String
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "sparkle")
+                .font(.title)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 4)
+            Text("No Claude sessions right now")
+                .font(.callout.weight(.medium))
+            Text(hooksHealthy
+                 ? "Sessions show up here as soon as Claude Code runs."
+                 : "Install the hooks in Settings to start tracking sessions.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+        .padding(.horizontal, 24)
+        .help("Events file: \(eventsFile)")
+    }
+}
+
+/// Collapsible header for the Background and Artifacts sections.
+struct SectionHeader: View {
+    let title: String
+    let summary: String
+    /// Something is still running: show a spinner.
+    let live: Bool
+    let collapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(title.uppercased())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .kerning(0.5)
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if live { ProgressView().controlSize(.mini) }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.04))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggle)
+    }
+}
+
+struct BackgroundJobRow: View {
+    let task: BackgroundJob
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(task.isRunning ? Color.green : Color.secondary)
+                .frame(width: 16)
+                .help(task.kind == .shell ? "Background command" : "Subagent")
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(task.title).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                    if let repo = task.repo {
+                        Text(repo).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Text(task.finishedAt ?? task.startedAt, style: .relative)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                HStack(spacing: 6) {
+                    Text(task.isRunning ? "Running" : "Finished")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(task.isRunning ? Color.green : Color.secondary)
+                    if let detail = task.detail {
+                        Text(detail)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .help("Click to open its session")
+    }
+
+    private var symbol: String {
+        switch task.kind {
+        case .shell: task.isRunning ? "play.circle" : "checkmark.circle"
+        case .subagent: task.isRunning ? "person.2.circle" : "person.2.circle.fill"
+        }
+    }
+}
+
+struct ArtifactRow: View {
+    let artifact: ArtifactRecord
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "doc.richtext")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(artifact.displayTitle).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                    if let repo = artifact.repo {
+                        Text(repo).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Text(artifact.updatedAt, style: .relative)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                HStack(spacing: 6) {
+                    Text(artifact.url.replacingOccurrences(of: "https://", with: ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if artifact.publishCount > 1 {
+                        Text("· \(artifact.publishCount) versions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .help("Open in the browser")
     }
 }

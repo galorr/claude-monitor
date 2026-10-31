@@ -29,6 +29,9 @@ struct ClaudeMonitorApp: App {
 final class AppModel: ObservableObject {
     @Published private(set) var sessions: [Session] = []
     @Published private(set) var attentionCount = 0
+    /// Background work and recent artifacts, for their list sections (D-017).
+    @Published private(set) var tasks: [BackgroundJob] = []
+    @Published private(set) var artifacts: [ArtifactRecord] = []
     @Published private(set) var settings: MonitorSettings
     /// Session to scroll to and highlight (set when a notification is clicked).
     @Published var highlightedSessionId: String?
@@ -45,6 +48,8 @@ final class AppModel: ObservableObject {
     /// Shown above the list when a click could not jump exactly (cleared after a few seconds).
     @Published private(set) var jumpMessage: String?
     @Published private(set) var collapsedEpics: Set<String>
+    /// "background" / "artifacts" sections folded by the user.
+    @Published private(set) var collapsedSections: Set<String>
     @Published private(set) var recordingHotkey = false
     @Published private(set) var hotkeyMessage: String?
 
@@ -62,6 +67,7 @@ final class AppModel: ObservableObject {
         bundledScript: Bundle.main.url(forResource: "claude-monitor-hook", withExtension: "sh")))
     private static let settingsKey = "settings"
     private static let collapsedKey = "collapsedEpics"
+    private static let collapsedSectionsKey = "collapsedSections"
     private lazy var jumper = Jumper(log: log)
     private var hotkeys: HotkeyManager?
     private var recorder: Any?
@@ -76,6 +82,7 @@ final class AppModel: ObservableObject {
         mongoURI = Keychain.read(account: Self.mongoAccount)
         mongoURIDraft = mongoURI ?? ""
         collapsedEpics = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedKey) ?? [])
+        collapsedSections = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedSectionsKey) ?? [])
 
         let box = WeakBox<AppModel>()
         sync = SyncEngine(paths: paths, log: log) { status in
@@ -119,6 +126,26 @@ final class AppModel: ObservableObject {
     }
 
     func isCollapsed(_ epic: String) -> Bool { collapsedEpics.contains(epic) }
+
+    var runningTaskCount: Int { tasks.filter(\.isRunning).count }
+
+    func isSectionCollapsed(_ section: String) -> Bool { collapsedSections.contains(section) }
+
+    func toggleSection(_ section: String) {
+        if collapsedSections.remove(section) == nil { collapsedSections.insert(section) }
+        UserDefaults.standard.set(Array(collapsedSections).sorted(), forKey: Self.collapsedSectionsKey)
+    }
+
+    /// Click on a background task: jump to the session that runs it.
+    func open(_ task: BackgroundJob) {
+        guard let session = sessions.first(where: { $0.id == task.sessionId }) else { return }
+        open(session)
+    }
+
+    func open(_ artifact: ArtifactRecord) {
+        guard let url = URL(string: artifact.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     func toggleEpic(_ epic: String) {
         if collapsedEpics.remove(epic) == nil { collapsedEpics.insert(epic) }
@@ -292,6 +319,8 @@ final class AppModel: ObservableObject {
     private func apply(_ update: MonitorEngine.Update) {
         sessions = update.sessions
         attentionCount = update.attentionCount
+        tasks = update.tasks
+        artifacts = update.artifacts
         for s in update.notify { notifier?.post(s) }
         // A session that left a notifying state no longer needs its banner.
         for s in sessions where !s.state.needsAttention { notifier?.clear(sessionId: s.id) }

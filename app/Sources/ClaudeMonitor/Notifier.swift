@@ -44,6 +44,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         content.sound = .default
         content.threadIdentifier = session.id
         content.userInfo = [Self.sessionIdKey: session.id]
+        // A state-coloured thumbnail: the banner shows what kind of attention it wants (D-017).
+        if let attachment = NotificationIcons.attachment(for: session.state) {
+            content.attachments = [attachment]
+        }
         // One per session+state: a newer one replaces an older one instead of stacking.
         let request = UNNotificationRequest(identifier: "\(session.id).\(session.state.rawValue)",
                                             content: content, trigger: nil)
@@ -72,5 +76,63 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         let onOpen = onOpen
         if let id { Task { @MainActor in onOpen(id) } }
         completionHandler()
+    }
+}
+
+/// Thumbnails for the notification banners, drawn from SF Symbols on a coloured tile.
+/// UNNotificationAttachment moves its file into the notification store, so each post
+/// gets a fresh copy of a cached render.
+enum NotificationIcons {
+    private static let directory = FileManager.default.temporaryDirectory
+        .appending(path: "ClaudeMonitor-notification-icons", directoryHint: .isDirectory)
+
+    static func attachment(for state: SessionState) -> UNNotificationAttachment? {
+        guard let (symbol, color) = style(for: state) else { return nil }
+        let cached = directory.appending(path: "\(state.rawValue).png")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: cached.path) {
+            guard let png = render(symbol: symbol, color: color) else { return nil }
+            try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard (try? png.write(to: cached, options: .atomic)) != nil else { return nil }
+        }
+        let copy = directory.appending(path: "\(state.rawValue)-\(UUID().uuidString).png")
+        guard (try? fm.copyItem(at: cached, to: copy)) != nil else { return nil }
+        return try? UNNotificationAttachment(identifier: state.rawValue, url: copy,
+                                             options: [UNNotificationAttachmentOptionsThumbnailHiddenKey: false])
+    }
+
+    /// Same colours as the session rows.
+    static func style(for state: SessionState) -> (symbol: String, color: NSColor)? {
+        switch state {
+        case .needsPermission: ("hand.raised.fill", .systemRed)
+        case .waitingInput: ("questionmark.bubble.fill", .systemOrange)
+        case .doneUnreviewed: ("checkmark.circle.fill", .systemBlue)
+        default: nil
+        }
+    }
+
+    /// 256×256 PNG: rounded tile in `color`, white symbol centred.
+    static func render(symbol: String, color: NSColor, size: CGFloat = 256) -> Data? {
+        let config = NSImage.SymbolConfiguration(pointSize: size * 0.5, weight: .semibold)
+        guard let template = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        // Tint the template white in its own transparent image, so only the glyph is hit.
+        let glyph = NSImage(size: template.size, flipped: false) { rect in
+            template.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+            NSColor.white.setFill()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            NSBezierPath(roundedRect: rect, xRadius: size * 0.22, yRadius: size * 0.22).addClip()
+            color.setFill()
+            rect.fill()
+            let glyphRect = NSRect(x: (size - glyph.size.width) / 2, y: (size - glyph.size.height) / 2,
+                                   width: glyph.size.width, height: glyph.size.height)
+            glyph.draw(in: glyphRect, from: .zero, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
     }
 }

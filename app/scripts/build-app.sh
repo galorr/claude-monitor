@@ -14,6 +14,8 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/ClaudeMonitor"
 # The hook installer (Settings → Hooks) copies this into Application Support/ClaudeMonitor/bin.
 cp ../hooks/claude-monitor-hook.sh "$app/Contents/Resources/claude-monitor-hook.sh"
+# App icon (menu-bar apps have no Dock tile, but notifications and Settings show it).
+swift scripts/make-icon.swift "$app/Contents/Resources/AppIcon.icns"
 
 version="0.1.0"
 build="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
@@ -26,6 +28,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Claude Monitor</string>
   <key>CFBundleDisplayName</key><string>Claude Monitor</string>
   <key>CFBundleExecutable</key><string>ClaudeMonitor</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$build</string>
