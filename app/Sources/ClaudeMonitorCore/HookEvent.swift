@@ -40,6 +40,10 @@ public struct HookEvent: Equatable, Sendable {
     public var reason: String?
     public var permissionMode: String?
     public var error: String?
+    /// PostToolUse: the parts of tool_input / tool_response the app tracks.
+    public var tool: ToolCall?
+    /// Stop: what Claude Code still has running for this session (nil when the line was truncated).
+    public var backgroundTasks: [BackgroundTaskSnapshot]?
 
     public var kind: Kind { Kind(rawValue: hookEventName) ?? .other }
 
@@ -59,6 +63,7 @@ public struct HookEvent: Equatable, Sendable {
             return s
         }
         func strings(_ key: String) -> [String]? { obj[key] as? [String] }
+        func dict(_ key: String) -> [String: Any]? { obj[key] as? [String: Any] }
 
         guard let sessionId = str("session_id") else { throw DecodeError.missingField("session_id") }
         guard let name = str("hook_event_name") else { throw DecodeError.missingField("hook_event_name") }
@@ -86,12 +91,98 @@ public struct HookEvent: Equatable, Sendable {
             source: str("source"),
             reason: str("reason"),
             permissionMode: str("permission_mode"),
-            error: str("error")
+            error: str("error"),
+            tool: ToolCall.decode(input: dict("tool_input"), response: dict("tool_response")),
+            backgroundTasks: (obj["background_tasks"] as? [Any]).map {
+                $0.compactMap { BackgroundTaskSnapshot.decode($0 as? [String: Any]) }
+            }
         )
     }
 
     static func parseTimestamp(_ s: String) -> Date? {
         if let d = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(s) { return d }
         return try? Date.ISO8601FormatStyle().parse(s)
+    }
+}
+
+/// The fields of a PostToolUse payload that reveal background work and published
+/// artifacts. Only Bash (run_in_background), Agent (async) and Artifact matter.
+public struct ToolCall: Equatable, Sendable {
+    /// Bash: tool_input.run_in_background.
+    public var runInBackground = false
+    /// Bash: tool_input.command (truncated by the hook).
+    public var command: String?
+    /// Bash / Agent: tool_input.description.
+    public var description: String?
+    /// Agent: tool_input.subagent_type.
+    public var subagentType: String?
+    /// Artifact: tool_input.action (nil = publish).
+    public var action: String?
+    /// Bash: tool_response.backgroundTaskId.
+    public var backgroundTaskId: String?
+    /// Agent: tool_response.agentId, and whether it was launched in the background.
+    public var agentId: String?
+    public var isAsync = false
+    /// Artifact: tool_response.url / title / icon.
+    public var url: String?
+    public var title: String?
+    public var icon: String?
+
+    public init() {}
+
+    static func decode(input: [String: Any]?, response: [String: Any]?) -> ToolCall? {
+        guard input != nil || response != nil else { return nil }
+        func str(_ d: [String: Any]?, _ key: String) -> String? {
+            guard let s = d?[key] as? String, !s.isEmpty else { return nil }
+            return s
+        }
+        func bool(_ d: [String: Any]?, _ key: String) -> Bool {
+            (d?[key] as? Bool) ?? ((d?[key] as? NSNumber)?.boolValue ?? false)
+        }
+        var t = ToolCall()
+        t.runInBackground = bool(input, "run_in_background")
+        t.command = str(input, "command")
+        t.description = str(input, "description")
+        t.subagentType = str(input, "subagent_type")
+        t.action = str(input, "action")
+        t.backgroundTaskId = str(response, "backgroundTaskId")
+        t.agentId = str(response, "agentId")
+        t.isAsync = bool(response, "isAsync") || str(response, "status") == "async_launched"
+        t.url = str(response, "url")
+        t.title = str(response, "title")
+        t.icon = str(response, "icon") ?? str(input, "icon")
+        return t
+    }
+}
+
+/// One entry of Stop's `background_tasks`.
+public struct BackgroundTaskSnapshot: Equatable, Sendable {
+    public var id: String
+    /// "shell" or "subagent" (anything else is kept as is).
+    public var type: String
+    public var status: String?
+    public var description: String?
+    public var command: String?
+    public var agentType: String?
+
+    public init(id: String, type: String, status: String? = nil, description: String? = nil,
+                command: String? = nil, agentType: String? = nil) {
+        self.id = id
+        self.type = type
+        self.status = status
+        self.description = description
+        self.command = command
+        self.agentType = agentType
+    }
+
+    static func decode(_ d: [String: Any]?) -> BackgroundTaskSnapshot? {
+        guard let d, let id = d["id"] as? String, !id.isEmpty else { return nil }
+        func str(_ key: String) -> String? {
+            guard let s = d[key] as? String, !s.isEmpty else { return nil }
+            return s
+        }
+        return BackgroundTaskSnapshot(id: id, type: str("type") ?? "shell", status: str("status"),
+                                      description: str("description"), command: str("command"),
+                                      agentType: str("agent_type"))
     }
 }

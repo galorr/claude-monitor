@@ -8,6 +8,9 @@ public final class MonitorEngine: @unchecked Sendable {
         /// Visible sessions, sorted by urgency.
         public var sessions: [Session]
         public var attentionCount: Int
+        /// Background work (running first) and recent artifacts, for their list sections (D-017).
+        public var tasks: [BackgroundJob]
+        public var artifacts: [ArtifactRecord]
         /// Sessions that just entered a notifying state (see NotificationPolicy).
         public var notify: [Session]
         /// Sessions touched since the last update (all of them on the first), for the Mongo sync.
@@ -190,8 +193,10 @@ public final class MonitorEngine: @unchecked Sendable {
     }
 
     private func sweep() {
-        let changes = snapshot.store.sweep(now: now(), settings: settings, isAlive: isAlive)
-        guard !changes.isEmpty else { return }
+        let at = now()
+        let changes = snapshot.store.sweep(now: at, settings: settings, isAlive: isAlive)
+        let activityChanged = snapshot.store.sweepActivity(now: at, settings: settings)
+        guard !changes.isEmpty || activityChanged else { return }
         for c in changes { log.log("sweep: \(c.sessionId) \(c.from?.rawValue ?? "-") → \(c.to.rawValue)") }
         record(changes)
         persist()
@@ -242,8 +247,11 @@ public final class MonitorEngine: @unchecked Sendable {
     }
 
     private func publish(notify: [Session] = [], changed: [String] = []) {
-        listener?(Update(sessions: snapshot.store.visible(now: now(), settings: settings),
+        let at = now()
+        listener?(Update(sessions: snapshot.store.visible(now: at, settings: settings),
                          attentionCount: snapshot.store.attentionCount,
+                         tasks: snapshot.store.visibleTasks(now: at),
+                         artifacts: snapshot.store.visibleArtifacts,
                          notify: notify,
                          changed: changed.compactMap { snapshot.store.sessions[$0] }))
     }

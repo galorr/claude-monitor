@@ -3,10 +3,24 @@ import Foundation
 /// Pure state machine over hook events, keyed by session_id. See decisions.md D-008.
 public struct SessionStore: Codable, Equatable, Sendable {
     public private(set) var sessions: [String: Session] = [:]
+    /// Background shell commands and async subagents, keyed by `BackgroundJob.key` (D-017).
+    public internal(set) var tasks: [String: BackgroundJob] = [:]
+    /// Published artifacts, keyed by URL (D-017).
+    public internal(set) var artifacts: [String: ArtifactRecord] = [:]
 
     static let maxMessageLength = 300
 
     public init() {}
+
+    enum CodingKeys: String, CodingKey { case sessions, tasks, artifacts }
+
+    // Snapshots written before tasks/artifacts existed decode with them empty.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessions = try c.decode([String: Session].self, forKey: .sessions)
+        tasks = try c.decodeIfPresent([String: BackgroundJob].self, forKey: .tasks) ?? [:]
+        artifacts = try c.decodeIfPresent([String: ArtifactRecord].self, forKey: .artifacts) ?? [:]
+    }
 
     /// Applies one event. Returns the state change it caused, if any (nil also for
     /// late events, which only fill in metadata).
@@ -37,6 +51,7 @@ public struct SessionStore: Codable, Equatable, Sendable {
         }
         s.updatedAt = max(s.updatedAt, e.ts)
         sessions[e.sessionId] = s
+        absorbActivity(e, session: s, isLate: isLate)
         return change
     }
 
