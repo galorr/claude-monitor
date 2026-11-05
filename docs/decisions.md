@@ -380,9 +380,8 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
   cores). A process born since the last sample is averaged over its own life. Keys are
   (pid, start time), so a reused pid never yields a bogus delta.
 - **Shown:** a "Processes" section (busiest first) lists groups at ≥ 10 % CPU, leftovers, and
-  shells older than 60 s. Each row shows the command (first line), repo, CPU, age, the busiest
+  shells older than 60 s (user processes in a tab: only at ≥ 10 %). Each row shows the command (first line), repo, CPU, age, the busiest
   process below it (`eslint .`), and "claude exited" / "session ended". Click opens the session.
-  A session row shows `CPU n%` when its groups sum to ≥ 25 %.
 - **Leftover** = a shell that is orphaned or whose session is closed / presumed dead. MCP
   servers are never leftovers: a live claude that outlived its session (an idle `bg-spare`
   after a presumed-dead session) keeps its servers by design.
@@ -395,6 +394,19 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
   Mongo.
 - **Limits:** a child that outlives its Claude shell (the zsh exits, the child is reparented to
   launchd) has no snapshot marker and is not attributed. Processes of other users are invisible.
+- **Per terminal tab (follow-up):** the Processes section is grouped by terminal tab, with a
+  CPU total per tab (header: repos, host app, tty; click jumps to the tab), and a tab counts
+  *everything* in it: also what the user runs there (`.terminal` groups, "yours"). Claude's
+  Bash shells have no controlling tty (own session, `??` in ps), while its MCP servers keep
+  the tab's, so a tab = claude's descendants ∪ processes whose controlling tty is the tab's,
+  minus claude itself and the shell chain above it (login, -zsh). Only terminals of sessions
+  with a running claude are scanned (a closed tab's tty can be reused); the newest live session
+  on a tty owns it. The tty name from the hook (`ttys003`) is turned into a device with
+  `stat(/dev/…)`. Sessions without a terminal (desktop app, `claude -p`) are a tab of their own;
+  orphans of a forgotten session go under "Unknown session".
+- **Badge always on:** a session with a running claude always shows `CPU n%` (grey, purple from
+  25 %), counting everything in its tab; before, it appeared only from 25 %, so a quiet
+  session looked like the feature was missing.
 - **Seen during testing:** after a rebuild, the ad-hoc signature changes and the Keychain
   read of the Mongo URI at launch blocks on a macOS "allow access" prompt until it is answered.
   Pre-existing, not changed here.

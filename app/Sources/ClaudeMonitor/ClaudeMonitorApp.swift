@@ -33,7 +33,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var tasks: [BackgroundJob] = []
     @Published private(set) var artifacts: [ArtifactRecord] = []
     /// Busy or leftover processes started by sessions, and CPU per session (D-018).
-    @Published private(set) var processGroups: [ProcessGroup] = []
+    @Published private(set) var processTabs: [ProcessTab] = []
     @Published private(set) var cpuBySession: [String: Double] = [:]
     @Published private(set) var settings: MonitorSettings
     /// Session to scroll to and highlight (set when a notification is clicked).
@@ -155,11 +155,14 @@ final class AppModel: ObservableObject {
         open(session)
     }
 
-    /// Current CPU of a session's processes, when worth showing on its row.
-    func cpuBadge(for session: Session) -> Double? {
-        guard let cpu = cpuBySession[session.id], cpu >= ProcessPolicy.badgeMinPercent else { return nil }
-        return cpu
+    /// Click on a tab header: jump to that terminal tab (its newest session).
+    func open(_ tab: ProcessTab) {
+        guard let id = tab.sessionId, let session = sessions.first(where: { $0.id == id }) else { return }
+        open(session)
     }
+
+    /// Current CPU of everything in the session's tab; nil when its claude is not running.
+    func cpuBadge(for session: Session) -> Double? { cpuBySession[session.id] }
 
     func open(_ artifact: ArtifactRecord) {
         guard let url = URL(string: artifact.url) else { return }
@@ -348,7 +351,7 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(_ update: ProcessMonitor.Update) {
-        if update.groups != processGroups { processGroups = update.groups }
+        if update.tabs != processTabs { processTabs = update.tabs }
         if update.cpuBySession != cpuBySession { cpuBySession = update.cpuBySession }
         for alert in update.alerts { notifier?.post(alert) }
     }

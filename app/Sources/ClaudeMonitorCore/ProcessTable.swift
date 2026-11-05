@@ -4,8 +4,19 @@ import Foundation
 /// Source of process samples; the live one reads libproc, tests pass a fixed table.
 public protocol ProcessTableReading: AnyObject {
     /// All processes of this user. `args` is filled for the pids `ProcessTree.needsArgs`
-    /// picks for these claude roots.
-    func read(roots: Set<Int32>) -> [ProcSample]
+    /// picks for these claude roots and terminal devices.
+    func read(roots: Set<Int32>, ttys: Set<Int32>) -> [ProcSample]
+}
+
+/// Terminal name → device number, as in a process's controlling tty.
+public enum TerminalDevice {
+    /// `ttys003` → st_rdev of /dev/ttys003; nil if it does not exist.
+    public static func device(named name: String) -> Int32? {
+        guard !name.isEmpty, !name.contains("/") else { return nil }
+        var st = stat()
+        guard stat("/dev/\(name)", &st) == 0, (st.st_mode & S_IFMT) == S_IFCHR else { return nil }
+        return Int32(bitPattern: UInt32(st.st_rdev))
+    }
 }
 
 /// Reads the process table through libproc and sysctl: no `ps` fork. Only processes of
@@ -29,9 +40,9 @@ public final class LibprocProcessTable: ProcessTableReading {
         argsBuffer = [UInt8](repeating: 0, count: Int(argmax))
     }
 
-    public func read(roots: Set<Int32>) -> [ProcSample] {
+    public func read(roots: Set<Int32>, ttys: Set<Int32>) -> [ProcSample] {
         var samples = basicSamples()
-        let wanted = ProcessTree.needsArgs(samples, roots: roots)
+        let wanted = ProcessTree.needsArgs(samples, roots: roots, ttys: ttys)
         var nextCache: [ProcKey: (name: String, args: [String])] = [:]
         for i in samples.indices where wanted.contains(samples[i].pid) {
             let key = samples[i].key
@@ -66,7 +77,10 @@ public final class LibprocProcessTable: ProcessTableReading {
             let cpu = Double(task.pti_total_user + task.pti_total_system) * timebase
             var name = Self.string(bsd.pbi_name)
             if name.isEmpty { name = Self.string(bsd.pbi_comm) }
-            result.append(ProcSample(pid: pid, ppid: Int32(bsd.pbi_ppid), startedAt: started, cpuSeconds: cpu, name: name))
+            // NODEV (all ones) = no controlling terminal.
+            let tty: Int32? = bsd.e_tdev == UInt32.max ? nil : Int32(bitPattern: bsd.e_tdev)
+            result.append(ProcSample(pid: pid, ppid: Int32(bsd.pbi_ppid), startedAt: started, cpuSeconds: cpu,
+                                     name: name, tty: tty))
         }
         return result
     }

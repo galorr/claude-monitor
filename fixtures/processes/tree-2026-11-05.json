@@ -1,5 +1,5 @@
 {
- "_comment": "Anonymised process tree modelled on a live capture (2026-11-05). Two samples 5 s apart; startedAt in Unix seconds. Sessions: A = claude 100, B = claude 200 (pid 300 is B's orphaned shell), C = claude 141 (started by a shell in A).",
+ "_comment": "Anonymised process tree modelled on a live capture (2026-11-05). Two samples 5 s apart; startedAt in Unix seconds; tty = controlling terminal device. Sessions: A = claude 100 in terminal tab 1001 (ttys001), where the user also runs `npm run dev` (150/151) and `tail -f` (160); B = claude 200 (desktop, pid 300 is B's orphaned shell); C = claude 141 (started by a shell in A). Tab 1009 has no Claude session (a busy `yes`).",
  "firstAt": 1793886205,
  "secondAt": 1793886210,
  "first": [
@@ -11,7 +11,8 @@
    "name": "zsh",
    "args": [
     "-zsh"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 100,
@@ -21,7 +22,8 @@
    "name": "claude",
    "args": [
     "claude"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 101,
@@ -31,7 +33,8 @@
    "name": "npm exec @model",
    "args": [
     "npm exec @modelcontextprotocol/server-github"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 102,
@@ -42,7 +45,8 @@
    "args": [
     "node",
     "/Users/u/.npm/_npx/3dfb/node_modules/.bin/mcp-server-github"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 103,
@@ -53,7 +57,8 @@
    "args": [
     "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
     "/Users/u/git/memory-agent/server.py"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 110,
@@ -328,6 +333,64 @@
     "--bg-spare",
     "/tmp/cc-daemon-501/x/spare/a.claim.sock"
    ]
+  },
+  {
+   "pid": 150,
+   "ppid": 50,
+   "startedAt": 1793879900,
+   "cpuSeconds": 5,
+   "name": "npm run dev",
+   "args": [
+    "npm run dev"
+   ],
+   "tty": 1001
+  },
+  {
+   "pid": 151,
+   "ppid": 150,
+   "startedAt": 1793879901,
+   "cpuSeconds": 40,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/apps/node_modules/.bin/vite"
+   ],
+   "tty": 1001
+  },
+  {
+   "pid": 160,
+   "ppid": 50,
+   "startedAt": 1793879950,
+   "cpuSeconds": 0.1,
+   "name": "tail",
+   "args": [
+    "tail",
+    "-f",
+    "server.log"
+   ],
+   "tty": 1001
+  },
+  {
+   "pid": 700,
+   "ppid": 1,
+   "startedAt": 1793880000,
+   "cpuSeconds": 1,
+   "name": "zsh",
+   "args": [
+    "-zsh"
+   ],
+   "tty": 1009
+  },
+  {
+   "pid": 701,
+   "ppid": 700,
+   "startedAt": 1793880010,
+   "cpuSeconds": 500,
+   "name": "yes",
+   "args": [
+    "yes"
+   ],
+   "tty": 1009
   }
  ],
  "second": [
@@ -339,7 +402,8 @@
    "name": "zsh",
    "args": [
     "-zsh"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 100,
@@ -349,7 +413,8 @@
    "name": "claude",
    "args": [
     "claude"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 101,
@@ -359,7 +424,8 @@
    "name": "npm exec @model",
    "args": [
     "npm exec @modelcontextprotocol/server-github"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 102,
@@ -370,7 +436,8 @@
    "args": [
     "node",
     "/Users/u/.npm/_npx/3dfb/node_modules/.bin/mcp-server-github"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 103,
@@ -381,7 +448,8 @@
    "args": [
     "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
     "/Users/u/git/memory-agent/server.py"
-   ]
+   ],
+   "tty": 1001
   },
   {
    "pid": 110,
@@ -656,6 +724,64 @@
     "--bg-spare",
     "/tmp/cc-daemon-501/x/spare/a.claim.sock"
    ]
+  },
+  {
+   "pid": 150,
+   "ppid": 50,
+   "startedAt": 1793879900,
+   "cpuSeconds": 5,
+   "name": "npm run dev",
+   "args": [
+    "npm run dev"
+   ],
+   "tty": 1001
+  },
+  {
+   "pid": 151,
+   "ppid": 150,
+   "startedAt": 1793879901,
+   "cpuSeconds": 42.5,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/apps/node_modules/.bin/vite"
+   ],
+   "tty": 1001
+  },
+  {
+   "pid": 160,
+   "ppid": 50,
+   "startedAt": 1793879950,
+   "cpuSeconds": 0.1,
+   "name": "tail",
+   "args": [
+    "tail",
+    "-f",
+    "server.log"
+   ],
+   "tty": 1001
+  },
+  {
+   "pid": 700,
+   "ppid": 1,
+   "startedAt": 1793880000,
+   "cpuSeconds": 1,
+   "name": "zsh",
+   "args": [
+    "-zsh"
+   ],
+   "tty": 1009
+  },
+  {
+   "pid": 701,
+   "ppid": 700,
+   "startedAt": 1793880010,
+   "cpuSeconds": 505,
+   "name": "yes",
+   "args": [
+    "yes"
+   ],
+   "tty": 1009
   }
  ]
 }

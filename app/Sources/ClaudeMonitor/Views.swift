@@ -47,7 +47,7 @@ struct SessionListView: View {
                     .padding(.bottom, 8)
             }
             Divider()
-            if model.sessions.isEmpty && model.tasks.isEmpty && model.artifacts.isEmpty && model.processGroups.isEmpty {
+            if model.sessions.isEmpty && model.tasks.isEmpty && model.artifacts.isEmpty && model.processTabs.isEmpty {
                 EmptyState(hooksHealthy: model.hookStatus.isHealthy, eventsFile: model.paths.eventsFile.path)
             } else {
                 // A ScrollView in a MenuBarExtra window collapses to zero height unless
@@ -79,12 +79,15 @@ struct SessionListView: View {
                                     }
                                 }
                             }
-                            if !model.processGroups.isEmpty {
+                            if !model.processTabs.isEmpty {
                                 section(Self.processesSection, title: "Processes",
-                                        summary: Self.processSummary(model.processGroups), live: false) {
-                                    ForEach(model.processGroups) { group in
-                                        ProcessRow(group: group, alertPercent: Double(model.settings.cpuAlertPercent)) {
-                                            model.open(group)
+                                        summary: Self.processSummary(model.processTabs), live: false) {
+                                    ForEach(model.processTabs) { tab in
+                                        ProcessTabHeader(tab: tab) { model.open(tab) }
+                                        ForEach(tab.groups) { group in
+                                            ProcessRow(group: group, alertPercent: Double(model.settings.cpuAlertPercent)) {
+                                                model.open(group)
+                                            }
                                         }
                                         Divider()
                                     }
@@ -152,10 +155,10 @@ struct SessionListView: View {
     static let artifactsSection = "artifacts"
     static let processesSection = "processes"
 
-    static func processSummary(_ groups: [ProcessGroup]) -> String {
-        let cpu = groups.reduce(0) { $0 + $1.cpuPercent }
-        let leftovers = groups.filter(\.isLeftover).count
-        var parts = ["\(ProcessPolicy.format(percent: cpu)) CPU"]
+    static func processSummary(_ tabs: [ProcessTab]) -> String {
+        let cpu = tabs.reduce(0) { $0 + $1.cpuPercent }
+        let leftovers = tabs.flatMap(\.groups).filter(\.isLeftover).count
+        var parts = ["\(ProcessPolicy.format(percent: cpu)) CPU", "\(tabs.count) tab\(tabs.count == 1 ? "" : "s")"]
         if leftovers > 0 { parts.append("\(leftovers) left running") }
         return parts.joined(separator: " · ")
     }
@@ -324,10 +327,12 @@ struct SessionRow: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(stateColor)
                     if let cpu = cpuPercent {
-                        Label("CPU \(ProcessPolicy.format(percent: cpu))", systemImage: "flame.fill")
+                        let busy = cpu >= ProcessPolicy.badgeMinPercent
+                        Label("CPU \(ProcessPolicy.format(percent: cpu))", systemImage: busy ? "flame.fill" : "cpu")
                             .font(.caption.weight(.medium).monospacedDigit())
-                            .foregroundStyle(.purple)
-                            .help("CPU used right now by the shells and servers this session started")
+                            .foregroundStyle(busy ? Color.purple : Color.secondary)
+                            .help("CPU used right now in this session's terminal: the shells and servers "
+                                  + "Claude started and anything you run there (claude itself not counted)")
                     }
                     Spacer()
                     if showHistory {
@@ -701,7 +706,7 @@ struct ProcessRow: View {
                         .foregroundStyle(cpuColor)
                 }
                 HStack(spacing: 6) {
-                    Text(group.repo ?? "unknown session")
+                    Text(kindLabel)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -726,8 +731,9 @@ struct ProcessRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.leading, 28)
+        .padding(.trailing, 12)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .help(tooltip)
@@ -738,6 +744,16 @@ struct ProcessRow: View {
         case .shell: "terminal"
         case .mcp: "server.rack"
         case .other: "gearshape"
+        case .terminal: "person.crop.square"
+        }
+    }
+
+    private var kindLabel: String {
+        switch group.kind {
+        case .shell: "Claude shell"
+        case .mcp: "MCP server"
+        case .other: "started by claude"
+        case .terminal: "yours"
         }
     }
 
@@ -746,6 +762,7 @@ struct ProcessRow: View {
         case .shell: "Shell started by the Bash tool"
         case .mcp: "MCP server"
         case .other: "Process started by claude"
+        case .terminal: "Started by you in this terminal, not by Claude"
         }
     }
 
@@ -761,5 +778,39 @@ struct ProcessRow: View {
                      + "\(ProcessPolicy.format(duration: group.cpuSeconds)) CPU time")
         lines.append(group.sessionId == nil ? "Its session is unknown." : "Click to open its session.")
         return lines.joined(separator: "\n")
+    }
+}
+
+/// One terminal tab in the Processes section: its sessions' repos, where it is, total CPU.
+struct ProcessTabHeader: View {
+    let tab: ProcessTab
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: tab.tty == nil ? "macwindow" : "terminal.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(tab.title).fontWeight(.semibold).lineLimit(1)
+            if let place = place {
+                Text(place).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            Text(ProcessPolicy.format(percent: tab.cpuPercent))
+                .font(.callout.weight(.semibold).monospacedDigit())
+                .foregroundStyle(tab.cpuPercent >= ProcessPolicy.badgeMinPercent ? Color.purple : Color.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .help(tab.sessionId == nil ? "Its session is unknown" : "Total CPU in this tab. Click to open it.")
+    }
+
+    /// "Terminal · ttys003".
+    private var place: String? {
+        let parts = [tab.hostApp, tab.tty].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

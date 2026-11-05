@@ -30,8 +30,13 @@ import Testing
     }
 
     /// A = claude 100, B = claude 200, C = claude 141 (started by a shell in A).
+    static let ttys: [String: Int32] = ["ttys001": 1001, "ttys009": 1009]
+
     static func sessions(bState: SessionState = .working) -> [Session] {
-        [session("sA", pid: 100, repo: "apps", lastEvent: 6205),
+        var a = session("sA", pid: 100, repo: "apps", lastEvent: 6205)
+        a.tty = "ttys001"
+        a.hostApp = "/Applications/iTerm.app"
+        return [a,
          session("sB", pid: 200, repo: "site", lastEvent: 6100, state: bState),
          // An older session of the same claude (before /clear): the newest one wins.
          session("sB-before-clear", pid: 200, repo: "site", lastEvent: 3000, state: .reviewed),
@@ -45,9 +50,10 @@ import Testing
         let t = try tree()
         var rates = CpuRateTracker()
         var owners: [String: String] = [:]
-        _ = ProcessTree.groups(t.first, sessions: sessions, rates: rates.rates(t.first, at: t.firstAt), owners: &owners)
+        _ = ProcessTree.groups(t.first, sessions: sessions, rates: rates.rates(t.first, at: t.firstAt),
+                               ttys: ttys, owners: &owners)
         let g = ProcessTree.groups(t.second, sessions: sessions, rates: rates.rates(t.second, at: t.secondAt),
-                                   owners: &owners)
+                                   ttys: ttys, owners: &owners)
         return (g, owners)
     }
 
@@ -116,7 +122,7 @@ import Testing
         #expect(Self.group(120, in: groups)?.kind == .other)
         // claude's own CPU is not a group, and nothing outside Claude is listed.
         let pids = Set(groups.map(\.pid))
-        #expect(pids.isDisjoint(with: [100, 200, 141, 50, 500, 600, 601]))
+        #expect(pids.isDisjoint(with: [100, 200, 141, 50, 500, 600, 601, 700, 701]))
     }
 
     @Test func cpuIsTheSubtreeRateAndNamesTheBusiestProcess() throws {
@@ -175,14 +181,14 @@ import Testing
     @Test func cpuBySessionSkipsOrphans() throws {
         let (groups, _) = try Self.groups()
         let by = ProcessTree.cpuBySession(groups)
-        #expect(abs(by["sA"]! - 170) < 0.01)
+        #expect(abs(by["sA"]! - 220) < 0.01)  // eslint 170 + the user's vite 50
         #expect(abs(by["sC"]! - 80) < 0.01)
         #expect(by["sB"] == 0)  // the orphan's 4% is not B's live load
     }
 
     @Test func needsArgsCoversRootsSubtreesAndLaunchdShells() throws {
         let t = try Self.tree()
-        let wanted = ProcessTree.needsArgs(t.first, roots: [100, 200])
+        let wanted = ProcessTree.needsArgs(t.first, roots: [100, 200])  // no tab devices
         #expect(wanted.isSuperset(of: [101, 102, 110, 113, 141, 143, 210, 300, 301, 400, 401, 500, 50]))
         // Roots themselves, and claude daemons, are never read; the login shell 50 (a launchd
         // child) does not drag claude 100's tree in a second time.
@@ -192,9 +198,64 @@ import Testing
     @Test func visibleListsBusyLeftoverAndOlderShellsBusiestFirst() throws {
         let (groups, _) = try Self.groups()
         let now = Self.base.addingTimeInterval(6210)
-        let visible = ProcessPolicy.visible(groups, now: now, longShellHours: 3)
-        #expect(visible.map(\.pid) == [110, 142, 300, 400, 130, 140])
+        let visible = ProcessPolicy.visible(groups, now: now)
+        #expect(visible.map(\.pid) == [110, 142, 150, 300, 400, 130, 140])
         // Hidden: idle MCP servers, caffeinate, and the 10 s old `sleep 240` shell.
+    }
+
+    // MARK: - Terminal tabs
+
+    @Test func theUsersOwnProcessesInTheTabCount() throws {
+        let (groups, _) = try Self.groups()
+        let dev = try #require(Self.group(150, in: groups))
+        #expect(dev.kind == .terminal && dev.sessionId == "sA" && dev.processCount == 2)
+        #expect(abs(dev.cpuPercent - 50) < 0.01 && dev.hottest == "vite")
+        #expect(Self.group(160, in: groups)?.kind == .terminal)
+        // MCP servers share the tab's tty but stay Claude's; the login shell above claude and
+        // another tab without a session are not counted.
+        #expect(Self.group(101, in: groups)?.kind == .mcp)
+        #expect(!groups.contains { [50, 151, 700, 701].contains($0.pid) })
+    }
+
+    @Test func noTerminalGroupsWithoutAKnownDevice() throws {
+        let t = try Self.tree()
+        var owners: [String: String] = [:]
+        let groups = ProcessTree.groups(t.second, sessions: Self.sessions(), rates: [:], owners: &owners)
+        #expect(!groups.contains { $0.kind == .terminal })
+    }
+
+    @Test func tabsGroupByTerminalBusiestFirst() throws {
+        let (groups, _) = try Self.groups()
+        let tabs = ProcessTab.tabs(groups, sessions: Self.sessions(), now: Self.base.addingTimeInterval(6210))
+        #expect(tabs.map(\.id) == ["tty:ttys001", "session:sC", "session:sB", "unknown"])
+        let a = tabs[0]
+        #expect(a.title == "apps" && a.hostApp == "iTerm" && a.tty == "ttys001" && a.sessionId == "sA")
+        #expect(abs(a.cpuPercent - 220) < 0.01)
+        #expect(a.groups.map(\.pid) == [110, 150, 130, 140])  // idle MCP servers and `tail` not listed
+        #expect(tabs[2].groups.map(\.pid) == [300])          // B: its orphan; the 10 s old shell is hidden
+        #expect(tabs[3].title == "Unknown session" && tabs[3].sessionId == nil)
+    }
+
+    @Test func liveSessionsGetABadgeEvenAtZero() throws {
+        let (groups, _) = try Self.groups()
+        let by = ProcessTree.cpuBySession(groups.filter { $0.sessionId != "sC" }, live: ["sA", "sC"])
+        #expect(by["sC"] == 0)
+        #expect(abs(by["sA"]! - 220) < 0.01)
+    }
+
+    @Test func needsArgsReadsTheTabsOwnProcesses() throws {
+        let t = try Self.tree()
+        let wanted = ProcessTree.needsArgs(t.first, roots: [100], ttys: [1001])
+        #expect(wanted.isSuperset(of: [150, 151, 160, 101]))
+        #expect(!wanted.contains(100))
+        // 701 is read anyway (under a launchd login shell, scanned for orphans) but never counted.
+    }
+
+    @Test func terminalDeviceNames() {
+        #expect(TerminalDevice.device(named: "null") != nil)  // /dev/null is a character device
+        #expect(TerminalDevice.device(named: "no-such-tty") == nil)
+        #expect(TerminalDevice.device(named: "../etc/passwd") == nil)
+        #expect(TerminalDevice.device(named: "") == nil)
     }
 
     // MARK: - Rates
@@ -276,6 +337,8 @@ import Testing
         let left = ProcessAlert(kind: .leftover, group: Self.group(cpu: 0, orphaned: true, now: t)).content(now: t)
         #expect(left.title == "apps: shell left running")
         #expect(left.body.contains("Its claude process has exited."))
+        let mine = ProcessAlert(kind: .hot, group: { var g = Self.group(cpu: 300, now: t); g.kind = .terminal; return g }())
+        #expect(mine.content(now: t).title == "apps: process in its terminal at 300% CPU")
     }
 
     @Test func multiLineCommandsAreSummarisedOnOneLine() {
@@ -307,7 +370,7 @@ import Testing
     final class FixtureReader: ProcessTableReading, @unchecked Sendable {
         var samples: [[ProcSample]]
         init(_ samples: [[ProcSample]]) { self.samples = samples }
-        func read(roots: Set<Int32>) -> [ProcSample] { samples.isEmpty ? [] : samples.removeFirst() }
+        func read(roots: Set<Int32>, ttys: Set<Int32>) -> [ProcSample] { samples.isEmpty ? [] : samples.removeFirst() }
     }
 
     final class Box<T>: @unchecked Sendable { var value: T; init(_ v: T) { value = v } }
@@ -316,15 +379,16 @@ import Testing
         let t = try Self.tree()
         let reader = FixtureReader([t.first, t.second])
         let clock = Box([t.firstAt, t.secondAt])
-        let monitor = ProcessMonitor(reader: { reader }, now: { clock.value.removeFirst() })
+        let monitor = ProcessMonitor(reader: { reader }, now: { clock.value.removeFirst() },
+                                     ttyDevice: { Self.ttys[$0] })
         let updates = Box<[ProcessMonitor.Update]>([])
         monitor.startForTesting(settings: MonitorSettings()) { updates.value.append($0) }
         monitor.syncUpdateSessions(Self.sessions())
         monitor.syncTick()
         monitor.syncTick()
         let last = try #require(updates.value.last)
-        #expect(last.groups.first?.pid == 110)
-        #expect(abs((last.cpuBySession["sA"] ?? 0) - 170) < 0.01)
+        #expect(last.tabs.first?.groups.first?.pid == 110)
+        #expect(abs((last.cpuBySession["sA"] ?? 0) - 220) < 0.01)
         #expect(last.alerts.isEmpty)  // nothing has been hot for 2 min yet
     }
 
@@ -335,7 +399,7 @@ import Testing
         let monitor = ProcessMonitor(reader: { reader }, now: {
             defer { clock.value = clock.value.addingTimeInterval(5) }
             return clock.value
-        })
+        }, ttyDevice: { Self.ttys[$0] })
         monitor.updateSessions(Self.sessions())
         let updates = Box<[ProcessMonitor.Update]>([])
         var settings = MonitorSettings()
@@ -346,7 +410,7 @@ import Testing
         monitor.stop()
         let count = updates.value.count
         #expect(count >= 2)
-        #expect(updates.value.last?.groups.first?.pid == 110)
+        #expect(updates.value.last?.tabs.first?.groups.first?.pid == 110)
         try await Task.sleep(for: .milliseconds(300))
         #expect(updates.value.count == count)
     }
@@ -354,7 +418,7 @@ import Testing
     @Test func liveTableSeesThisProcessWithItsArguments() {
         let table = LibprocProcessTable()
         let me = getpid()
-        let samples = table.read(roots: [getppid()])
+        let samples = table.read(roots: [getppid()], ttys: [])
         let mine = samples.first { $0.pid == me }
         #expect(mine != nil)
         #expect(mine?.args?.isEmpty == false)

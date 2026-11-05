@@ -13,14 +13,19 @@ public struct ProcSample: Codable, Equatable, Sendable {
     public var name: String
     /// Only read for processes the attribution needs (see `ProcessTree.needsArgs`).
     public var args: [String]?
+    /// Device of the controlling terminal; nil without one. Claude's Bash shells have none
+    /// (they run in their own session), its MCP servers keep the tab's.
+    public var tty: Int32?
 
-    public init(pid: Int32, ppid: Int32, startedAt: Date, cpuSeconds: Double, name: String, args: [String]? = nil) {
+    public init(pid: Int32, ppid: Int32, startedAt: Date, cpuSeconds: Double, name: String, args: [String]? = nil,
+                tty: Int32? = nil) {
         self.pid = pid
         self.ppid = ppid
         self.startedAt = startedAt
         self.cpuSeconds = cpuSeconds
         self.name = name
         self.args = args
+        self.tty = tty
     }
 
     public var key: ProcKey { ProcKey(pid: pid, startedAt: startedAt) }
@@ -41,6 +46,8 @@ public enum ProcessKind: String, Codable, Sendable {
     case mcp
     /// Anything else claude started directly (caffeinate, …).
     case other
+    /// Not Claude's: started in the session's terminal tab by the user (a dev server, a build).
+    case terminal
 }
 
 /// One direct child of a claude process (or an orphaned Claude shell) with everything below it.
@@ -97,7 +104,7 @@ public enum ProcessPolicy {
     public static let clockSlack: TimeInterval = 5
 
     /// What the Processes section lists: busiest first.
-    public static func visible(_ groups: [ProcessGroup], now: Date, longShellHours: Int) -> [ProcessGroup] {
+    public static func visible(_ groups: [ProcessGroup], now: Date) -> [ProcessGroup] {
         groups.filter { g in
             g.cpuPercent >= listMinPercent || g.isLeftover
                 || (g.kind == .shell && g.age(now: now) >= listMinShellAge)
@@ -124,6 +131,53 @@ public enum ProcessPolicy {
         if s < 3600 { return "\(s / 60)m" }
         if s < 86400 { return "\(s / 3600)h \(s % 3600 / 60)m" }
         return "\(s / 86400)d \(s % 86400 / 3600)h"
+    }
+}
+
+/// The processes of one terminal tab (or of one session without a terminal: desktop app),
+/// for the grouped Processes section.
+public struct ProcessTab: Equatable, Sendable, Identifiable {
+    /// `tty:ttys003`, `session:<id>`, or `unknown` for orphans of a forgotten session.
+    public var id: String
+    public var tty: String?
+    /// The app around it: "Terminal", "iTerm", "Claude".
+    public var hostApp: String?
+    /// Newest first.
+    public var sessionIds: [String]
+    /// Repos of its sessions.
+    public var title: String
+    /// Everything in the tab, listed or not.
+    public var cpuPercent: Double
+    public var groups: [ProcessGroup]
+
+    /// The session to open on a click: the newest one.
+    public var sessionId: String? { sessionIds.first }
+
+    public static func tabs(_ groups: [ProcessGroup], sessions: [Session], now: Date) -> [ProcessTab] {
+        let byId = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        func key(_ s: Session?) -> String {
+            guard let s else { return "unknown" }
+            return s.tty.map { "tty:\($0)" } ?? "session:\(s.id)"
+        }
+        var tabs: [ProcessTab] = []
+        for (id, members) in Dictionary(grouping: groups, by: { key($0.sessionId.flatMap { byId[$0] }) }) {
+            let visible = ProcessPolicy.visible(members, now: now)
+            guard !visible.isEmpty else { continue }
+            let tabSessions = Set(members.compactMap(\.sessionId)).compactMap { byId[$0] }
+                .sorted { $0.lastEventAt != $1.lastEventAt ? $0.lastEventAt > $1.lastEventAt : $0.id < $1.id }
+            var repos: [String] = []
+            for r in tabSessions.map(\.displayRepo) where !repos.contains(r) { repos.append(r) }
+            let host = tabSessions.lazy.compactMap(\.hostApp).first
+            tabs.append(ProcessTab(id: id, tty: tabSessions.lazy.compactMap(\.tty).first,
+                                   hostApp: host.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent },
+                                   sessionIds: tabSessions.map(\.id),
+                                   title: repos.isEmpty ? "Unknown session" : repos.joined(separator: " · "),
+                                   cpuPercent: members.reduce(0) { $0 + $1.cpuPercent }, groups: visible))
+        }
+        return tabs.sorted {
+            if $0.cpuPercent != $1.cpuPercent { return $0.cpuPercent > $1.cpuPercent }
+            return $0.id < $1.id
+        }
     }
 }
 
@@ -177,6 +231,7 @@ public enum ProcessLabel {
 
     public static func short(_ sample: ProcSample, maxLength: Int = 120) -> String {
         guard var args = sample.args, !args.isEmpty else { return sample.name }
+        if args[0].hasPrefix("-") { args[0].removeFirst() }  // login shells: "-zsh"
         var head = URL(fileURLWithPath: args[0]).lastPathComponent
         if isInterpreter(head), args.count > 1, !args[1].hasPrefix("-") {
             args.removeFirst()
@@ -209,11 +264,13 @@ public struct ProcessTree {
 
     /// The pids whose command line the attribution needs: everything below a claude root
     /// and every launchd child that could be an orphaned Claude shell (plus its subtree).
-    public static func needsArgs(_ samples: [ProcSample], roots: Set<Int32>) -> Set<Int32> {
+    public static func needsArgs(_ samples: [ProcSample], roots: Set<Int32>, ttys: Set<Int32> = []) -> Set<Int32> {
         let children = Dictionary(grouping: samples, by: \.ppid)
         let launchdShells = samples.filter { $0.ppid == 1 && ["zsh", "bash", "sh"].contains($0.name) }.map(\.pid)
-        var result = Set(launchdShells)
-        var stack = Array(roots) + launchdShells
+        // Everything in a session's terminal tab: the user's own commands are listed too.
+        let inTabs = samples.filter { $0.tty.map(ttys.contains) == true && !roots.contains($0.pid) }.map(\.pid)
+        var result = Set(launchdShells + inTabs)
+        var stack = Array(roots) + launchdShells + inTabs
         while let pid = stack.popLast() {
             // A root's own walk covers its subtree; launchd shells stop at it.
             for c in children[pid] ?? [] where !result.contains(c.pid) && !roots.contains(c.pid) {
@@ -227,8 +284,10 @@ public struct ProcessTree {
     /// Groups for every claude root's children, plus orphaned Claude shells.
     /// `owners` (snapshot path → session id) is learned here while claude is alive,
     /// and used to name the session of a shell that outlived it.
+    /// `ttys` maps a session's terminal name (`ttys003`) to its device number: the user's
+    /// own processes on that terminal become `.terminal` groups of the session.
     public static func groups(_ samples: [ProcSample], sessions: [Session], rates: [ProcKey: Double],
-                              owners: inout [String: String]) -> [ProcessGroup] {
+                              ttys: [String: Int32] = [:], owners: inout [String: String]) -> [ProcessGroup] {
         let table = Dictionary(samples.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
         let children = Dictionary(grouping: samples, by: \.ppid)
         let roots = roots(sessions, table: table)
@@ -277,12 +336,48 @@ public struct ProcessTree {
             let session = ClaudeShell.snapshotPath(p.args).flatMap { owners[$0] }.flatMap { byId[$0] }
             groups.append(group(p, session: session, kind: .shell, orphaned: true))
         }
+        groups += terminalGroups(samples, roots: roots, ttys: ttys, children: children, table: table) {
+            group($0, session: $1, kind: .terminal, orphaned: false)
+        }
         return groups
     }
 
-    /// Current CPU per session (all its groups), for the row badge.
-    public static func cpuBySession(_ groups: [ProcessGroup]) -> [String: Double] {
-        var result: [String: Double] = [:]
+    /// The user's own processes in each live session's tab: on that terminal, not claude,
+    /// not below claude, and not the tab's shell chain above claude (login, -zsh).
+    private static func terminalGroups(_ samples: [ProcSample], roots: [Int32: Session], ttys: [String: Int32],
+                                       children: [Int32: [ProcSample]], table: [Int32: ProcSample],
+                                       make: (ProcSample, Session) -> ProcessGroup) -> [ProcessGroup] {
+        var owner: [Int32: Session] = [:]  // tty device → the newest live session on it
+        for (_, s) in roots {
+            guard let name = s.tty, let dev = ttys[name] else { continue }
+            if let other = owner[dev], other.lastEventAt >= s.lastEventAt { continue }
+            owner[dev] = s
+        }
+        guard !owner.isEmpty else { return [] }
+        var claudes = Set<Int32>()     // roots and everything below them
+        var stack = Array(roots.keys)
+        while let pid = stack.popLast() {
+            guard claudes.insert(pid).inserted else { continue }
+            stack += (children[pid] ?? []).map(\.pid)
+        }
+        var above = Set<Int32>()       // the shells that started claude
+        for pid in roots.keys {
+            var p = table[pid]?.ppid
+            while let cur = p, cur > 1, above.insert(cur).inserted { p = table[cur]?.ppid }
+        }
+        let candidates = samples.filter {
+            guard let dev = $0.tty, owner[dev] != nil else { return false }
+            return !claudes.contains($0.pid) && !above.contains($0.pid)
+        }
+        let candidatePids = Set(candidates.map(\.pid))
+        // Top level only: a candidate whose parent is a candidate is inside that group.
+        return candidates.filter { !candidatePids.contains($0.ppid) }.map { make($0, owner[$0.tty!]!) }
+    }
+
+    /// Current CPU per session (all its groups, including the user's own processes in its
+    /// tab), for the row badge. `live` sessions (claude running) are listed even at 0.
+    public static func cpuBySession(_ groups: [ProcessGroup], live: [String] = []) -> [String: Double] {
+        var result = Dictionary(live.map { ($0, 0.0) }, uniquingKeysWith: { a, _ in a })
         for g in groups where !g.orphaned {
             guard let id = g.sessionId else { continue }
             result[id, default: 0] += g.cpuPercent
@@ -333,7 +428,13 @@ public struct ProcessAlert: Equatable, Sendable {
 
     public func content(now: Date) -> (title: String, subtitle: String, body: String) {
         let repo = group.repo ?? "Claude"
-        let what = group.kind == .shell ? "shell" : group.kind == .mcp ? "MCP server" : "process"
+        let what: String
+        switch group.kind {
+        case .shell: what = "shell"
+        case .mcp: what = "MCP server"
+        case .other: what = "process"
+        case .terminal: what = "process in its terminal"
+        }
         let title: String
         switch kind {
         case .hot: title = "\(repo): \(what) at \(ProcessPolicy.format(percent: group.cpuPercent)) CPU"

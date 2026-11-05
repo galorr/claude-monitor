@@ -5,9 +5,9 @@ import Foundation
 /// table, not the events file, and keeps nothing on disk. State is confined to `queue`.
 public final class ProcessMonitor: @unchecked Sendable {
     public struct Update: Sendable {
-        /// Groups for the Processes section, busiest first.
-        public var groups: [ProcessGroup]
-        /// Current CPU per session id, for the row badge.
+        /// The Processes section: one entry per terminal tab, busiest first.
+        public var tabs: [ProcessTab]
+        /// Current CPU per session id with a running claude (0 included), for the row badge.
         public var cpuBySession: [String: Double]
         public var alerts: [ProcessAlert]
     }
@@ -17,6 +17,7 @@ public final class ProcessMonitor: @unchecked Sendable {
     private let queue = DispatchQueue(label: "claude-monitor.processes", qos: .utility)
     private let makeReader: @Sendable () -> ProcessTableReading
     private let now: @Sendable () -> Date
+    private let ttyDevice: @Sendable (String) -> Int32?
     private var reader: ProcessTableReading?
     private var sessions: [Session] = []
     private var settings = MonitorSettings()
@@ -25,13 +26,15 @@ public final class ProcessMonitor: @unchecked Sendable {
     private var rates = CpuRateTracker()
     private var alerts = ProcessAlertTracker()
     private var owners: [String: String] = [:]
-    private var lastPublished: [ProcessGroup]?
+    private var lastPublished: [ProcessTab]?
     private var lastBySession: [String: Double] = [:]
 
     public init(reader: @escaping @Sendable () -> ProcessTableReading = { LibprocProcessTable() },
-                now: @escaping @Sendable () -> Date = { Date() }) {
+                now: @escaping @Sendable () -> Date = { Date() },
+                ttyDevice: @escaping @Sendable (String) -> Int32? = TerminalDevice.device(named:)) {
         makeReader = reader
         self.now = now
+        self.ttyDevice = ttyDevice
     }
 
     public func start(settings: MonitorSettings, listener: @escaping Listener) {
@@ -69,19 +72,24 @@ public final class ProcessMonitor: @unchecked Sendable {
         guard let reader else { return }
         let at = now()
         let roots = Set(sessions.compactMap { $0.claudePid.map(Int32.init) })
-        let samples = reader.read(roots: roots)
+        var ttys: [String: Int32] = [:]
+        for s in sessions where !s.state.isEnded {
+            if let name = s.tty, ttys[name] == nil, let dev = ttyDevice(name) { ttys[name] = dev }
+        }
+        let samples = reader.read(roots: roots, ttys: Set(ttys.values))
         let current = rates.rates(samples, at: at)
-        let groups = ProcessTree.groups(samples, sessions: sessions, rates: current, owners: &owners)
+        let groups = ProcessTree.groups(samples, sessions: sessions, rates: current, ttys: ttys, owners: &owners)
         let fired = alerts.evaluate(groups, now: at, settings: settings)
-        let visible = ProcessPolicy.visible(groups, now: at, longShellHours: settings.longShellHours)
-        let bySession = ProcessTree.cpuBySession(groups)
-        // Quiet machine: no need to wake the UI every 5 s with the same empty list.
-        if fired.isEmpty, visible.isEmpty, lastPublished?.isEmpty == true,
-           bySession.values.allSatisfy({ $0 < ProcessPolicy.badgeMinPercent }),
-           lastBySession.values.allSatisfy({ $0 < ProcessPolicy.badgeMinPercent }) { return }
-        lastPublished = visible
-        lastBySession = bySession
-        listener?(Update(groups: visible, cpuBySession: bySession,
+        let tabs = ProcessTab.tabs(groups, sessions: sessions, now: at)
+        let table = Dictionary(samples.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
+        let live = ProcessTree.roots(sessions, table: table).values.map(\.id)
+        let bySession = ProcessTree.cpuBySession(groups, live: live)
+        // Same picture as last time: don't wake the UI (badges are rounded, so compare that).
+        let rounded = bySession.mapValues { ($0 * 10).rounded() / 10 }
+        if fired.isEmpty, tabs == lastPublished, rounded == lastBySession { return }
+        lastPublished = tabs
+        lastBySession = rounded
+        listener?(Update(tabs: tabs, cpuBySession: bySession,
                          alerts: settings.processAlertsEnabled && settings.notificationsEnabled ? fired : []))
     }
 
