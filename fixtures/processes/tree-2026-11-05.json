@@ -1,0 +1,661 @@
+{
+ "_comment": "Anonymised process tree modelled on a live capture (2026-11-05). Two samples 5 s apart; startedAt in Unix seconds. Sessions: A = claude 100, B = claude 200 (pid 300 is B's orphaned shell), C = claude 141 (started by a shell in A).",
+ "firstAt": 1793886205,
+ "secondAt": 1793886210,
+ "first": [
+  {
+   "pid": 50,
+   "ppid": 1,
+   "startedAt": 1793871000,
+   "cpuSeconds": 1,
+   "name": "zsh",
+   "args": [
+    "-zsh"
+   ]
+  },
+  {
+   "pid": 100,
+   "ppid": 50,
+   "startedAt": 1793880000,
+   "cpuSeconds": 300,
+   "name": "claude",
+   "args": [
+    "claude"
+   ]
+  },
+  {
+   "pid": 101,
+   "ppid": 100,
+   "startedAt": 1793880002,
+   "cpuSeconds": 1,
+   "name": "npm exec @model",
+   "args": [
+    "npm exec @modelcontextprotocol/server-github"
+   ]
+  },
+  {
+   "pid": 102,
+   "ppid": 101,
+   "startedAt": 1793880003,
+   "cpuSeconds": 4,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/.npm/_npx/3dfb/node_modules/.bin/mcp-server-github"
+   ]
+  },
+  {
+   "pid": 103,
+   "ppid": 100,
+   "startedAt": 1793880002,
+   "cpuSeconds": 9,
+   "name": "Python",
+   "args": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
+    "/Users/u/git/memory-agent/server.py"
+   ]
+  },
+  {
+   "pid": 110,
+   "ppid": 100,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0.01,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793881-abc1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'npx nx run-many -t typecheck lint test 2>&1 | grep -E '\\''error|Failed'\\'' | head -10' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 111,
+   "ppid": 110,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0.3,
+   "name": "npm exec nx run-",
+   "args": [
+    "npm exec nx run-many -t typecheck lint test"
+   ]
+  },
+  {
+   "pid": 112,
+   "ppid": 111,
+   "startedAt": 1793886001,
+   "cpuSeconds": 0.8,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/apps/node_modules/.bin/nx",
+    "run-many",
+    "-t",
+    "typecheck",
+    "lint",
+    "test"
+   ]
+  },
+  {
+   "pid": 113,
+   "ppid": 112,
+   "startedAt": 1793886002,
+   "cpuSeconds": 25.5,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/apps/node_modules/.bin/eslint",
+    "."
+   ]
+  },
+  {
+   "pid": 114,
+   "ppid": 110,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0,
+   "name": "grep",
+   "args": [
+    "grep",
+    "-E",
+    "error|Failed"
+   ]
+  },
+  {
+   "pid": 120,
+   "ppid": 100,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0,
+   "name": "caffeinate",
+   "args": [
+    "caffeinate",
+    "-i",
+    "-t",
+    "300"
+   ]
+  },
+  {
+   "pid": 130,
+   "ppid": 100,
+   "startedAt": 1793880100,
+   "cpuSeconds": 0.02,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793881-abc1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'npx bats scripts/tests/runner.bats | tail -3' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 131,
+   "ppid": 130,
+   "startedAt": 1793880100,
+   "cpuSeconds": 0.5,
+   "name": "npm exec bats sc",
+   "args": [
+    "npm exec bats scripts/tests/runner.bats"
+   ]
+  },
+  {
+   "pid": 132,
+   "ppid": 131,
+   "startedAt": 1793880101,
+   "cpuSeconds": 12,
+   "name": "bash",
+   "args": [
+    "bash",
+    "/Users/u/.npm/_npx/cd2c/node_modules/bats/libexec/bats-core/bats",
+    "scripts/tests/runner.bats"
+   ]
+  },
+  {
+   "pid": 140,
+   "ppid": 100,
+   "startedAt": 1793885000,
+   "cpuSeconds": 0,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793881-abc1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'claude -p '\\''summarise the diff'\\''' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 141,
+   "ppid": 140,
+   "startedAt": 1793885001,
+   "cpuSeconds": 40,
+   "name": "claude",
+   "args": [
+    "claude",
+    "-p",
+    "summarise the diff"
+   ]
+  },
+  {
+   "pid": 142,
+   "ppid": 141,
+   "startedAt": 1793885100,
+   "cpuSeconds": 0,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793883-abc3.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'git diff main' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 143,
+   "ppid": 142,
+   "startedAt": 1793885100,
+   "cpuSeconds": 3,
+   "name": "git",
+   "args": [
+    "git",
+    "diff",
+    "main"
+   ]
+  },
+  {
+   "pid": 200,
+   "ppid": 1,
+   "startedAt": 1793881000,
+   "cpuSeconds": 120,
+   "name": "claude",
+   "args": [
+    "/Users/u/Library/Application Support/Claude/claude-code/2.1.311/claude"
+   ]
+  },
+  {
+   "pid": 210,
+   "ppid": 200,
+   "startedAt": 1793886200,
+   "cpuSeconds": 0,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793882-abc2.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'sleep 240' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 211,
+   "ppid": 210,
+   "startedAt": 1793886200,
+   "cpuSeconds": 0,
+   "name": "sleep",
+   "args": [
+    "sleep",
+    "240"
+   ]
+  },
+  {
+   "pid": 300,
+   "ppid": 1,
+   "startedAt": 1793882000,
+   "cpuSeconds": 0.05,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793882-abc2.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'npm run dev' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 301,
+   "ppid": 300,
+   "startedAt": 1793882001,
+   "cpuSeconds": 80,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/site/node_modules/.bin/vite"
+   ]
+  },
+  {
+   "pid": 400,
+   "ppid": 1,
+   "startedAt": 1793883000,
+   "cpuSeconds": 0.01,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793889-abc9.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'tail -f build.log' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 401,
+   "ppid": 400,
+   "startedAt": 1793883000,
+   "cpuSeconds": 0.1,
+   "name": "tail",
+   "args": [
+    "tail",
+    "-f",
+    "build.log"
+   ]
+  },
+  {
+   "pid": 500,
+   "ppid": 1,
+   "startedAt": 1793880000,
+   "cpuSeconds": 2,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-l"
+   ]
+  },
+  {
+   "pid": 600,
+   "ppid": 1,
+   "startedAt": 1793830000,
+   "cpuSeconds": 116,
+   "name": "claude",
+   "args": [
+    "claude",
+    "bg-pty-host",
+    "--bg-pty-host",
+    "/tmp/cc-daemon-501/x/spare/a.pty.sock"
+   ]
+  },
+  {
+   "pid": 601,
+   "ppid": 600,
+   "startedAt": 1793830000,
+   "cpuSeconds": 1100,
+   "name": "claude",
+   "args": [
+    "claude",
+    "bg-spare",
+    "--bg-spare",
+    "/tmp/cc-daemon-501/x/spare/a.claim.sock"
+   ]
+  }
+ ],
+ "second": [
+  {
+   "pid": 50,
+   "ppid": 1,
+   "startedAt": 1793871000,
+   "cpuSeconds": 1,
+   "name": "zsh",
+   "args": [
+    "-zsh"
+   ]
+  },
+  {
+   "pid": 100,
+   "ppid": 50,
+   "startedAt": 1793880000,
+   "cpuSeconds": 302,
+   "name": "claude",
+   "args": [
+    "claude"
+   ]
+  },
+  {
+   "pid": 101,
+   "ppid": 100,
+   "startedAt": 1793880002,
+   "cpuSeconds": 1,
+   "name": "npm exec @model",
+   "args": [
+    "npm exec @modelcontextprotocol/server-github"
+   ]
+  },
+  {
+   "pid": 102,
+   "ppid": 101,
+   "startedAt": 1793880003,
+   "cpuSeconds": 4,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/.npm/_npx/3dfb/node_modules/.bin/mcp-server-github"
+   ]
+  },
+  {
+   "pid": 103,
+   "ppid": 100,
+   "startedAt": 1793880002,
+   "cpuSeconds": 9,
+   "name": "Python",
+   "args": [
+    "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python",
+    "/Users/u/git/memory-agent/server.py"
+   ]
+  },
+  {
+   "pid": 110,
+   "ppid": 100,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0.01,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793881-abc1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'npx nx run-many -t typecheck lint test 2>&1 | grep -E '\\''error|Failed'\\'' | head -10' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 111,
+   "ppid": 110,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0.3,
+   "name": "npm exec nx run-",
+   "args": [
+    "npm exec nx run-many -t typecheck lint test"
+   ]
+  },
+  {
+   "pid": 112,
+   "ppid": 111,
+   "startedAt": 1793886001,
+   "cpuSeconds": 0.8,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/apps/node_modules/.bin/nx",
+    "run-many",
+    "-t",
+    "typecheck",
+    "lint",
+    "test"
+   ]
+  },
+  {
+   "pid": 113,
+   "ppid": 112,
+   "startedAt": 1793886002,
+   "cpuSeconds": 34.0,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/apps/node_modules/.bin/eslint",
+    "."
+   ]
+  },
+  {
+   "pid": 114,
+   "ppid": 110,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0,
+   "name": "grep",
+   "args": [
+    "grep",
+    "-E",
+    "error|Failed"
+   ]
+  },
+  {
+   "pid": 120,
+   "ppid": 100,
+   "startedAt": 1793886000,
+   "cpuSeconds": 0,
+   "name": "caffeinate",
+   "args": [
+    "caffeinate",
+    "-i",
+    "-t",
+    "300"
+   ]
+  },
+  {
+   "pid": 130,
+   "ppid": 100,
+   "startedAt": 1793880100,
+   "cpuSeconds": 0.02,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793881-abc1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'npx bats scripts/tests/runner.bats | tail -3' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 131,
+   "ppid": 130,
+   "startedAt": 1793880100,
+   "cpuSeconds": 0.5,
+   "name": "npm exec bats sc",
+   "args": [
+    "npm exec bats scripts/tests/runner.bats"
+   ]
+  },
+  {
+   "pid": 132,
+   "ppid": 131,
+   "startedAt": 1793880101,
+   "cpuSeconds": 12,
+   "name": "bash",
+   "args": [
+    "bash",
+    "/Users/u/.npm/_npx/cd2c/node_modules/bats/libexec/bats-core/bats",
+    "scripts/tests/runner.bats"
+   ]
+  },
+  {
+   "pid": 140,
+   "ppid": 100,
+   "startedAt": 1793885000,
+   "cpuSeconds": 0,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793881-abc1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'claude -p '\\''summarise the diff'\\''' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 141,
+   "ppid": 140,
+   "startedAt": 1793885001,
+   "cpuSeconds": 41,
+   "name": "claude",
+   "args": [
+    "claude",
+    "-p",
+    "summarise the diff"
+   ]
+  },
+  {
+   "pid": 142,
+   "ppid": 141,
+   "startedAt": 1793885100,
+   "cpuSeconds": 0,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793883-abc3.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'git diff main' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 143,
+   "ppid": 142,
+   "startedAt": 1793885100,
+   "cpuSeconds": 7,
+   "name": "git",
+   "args": [
+    "git",
+    "diff",
+    "main"
+   ]
+  },
+  {
+   "pid": 200,
+   "ppid": 1,
+   "startedAt": 1793881000,
+   "cpuSeconds": 120.5,
+   "name": "claude",
+   "args": [
+    "/Users/u/Library/Application Support/Claude/claude-code/2.1.311/claude"
+   ]
+  },
+  {
+   "pid": 210,
+   "ppid": 200,
+   "startedAt": 1793886200,
+   "cpuSeconds": 0,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793882-abc2.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'sleep 240' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 211,
+   "ppid": 210,
+   "startedAt": 1793886200,
+   "cpuSeconds": 0,
+   "name": "sleep",
+   "args": [
+    "sleep",
+    "240"
+   ]
+  },
+  {
+   "pid": 300,
+   "ppid": 1,
+   "startedAt": 1793882000,
+   "cpuSeconds": 0.05,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793882-abc2.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'npm run dev' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 301,
+   "ppid": 300,
+   "startedAt": 1793882001,
+   "cpuSeconds": 80.2,
+   "name": "node",
+   "args": [
+    "node",
+    "/Users/u/git/site/node_modules/.bin/vite"
+   ]
+  },
+  {
+   "pid": 400,
+   "ppid": 1,
+   "startedAt": 1793883000,
+   "cpuSeconds": 0.01,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-c",
+    "source /Users/u/.claude/shell-snapshots/snapshot-zsh-1793889-abc9.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && eval 'tail -f build.log' < /dev/null && pwd -P >| /tmp/claude-1a2b-cwd"
+   ]
+  },
+  {
+   "pid": 401,
+   "ppid": 400,
+   "startedAt": 1793883000,
+   "cpuSeconds": 0.1,
+   "name": "tail",
+   "args": [
+    "tail",
+    "-f",
+    "build.log"
+   ]
+  },
+  {
+   "pid": 500,
+   "ppid": 1,
+   "startedAt": 1793880000,
+   "cpuSeconds": 2,
+   "name": "zsh",
+   "args": [
+    "/bin/zsh",
+    "-l"
+   ]
+  },
+  {
+   "pid": 600,
+   "ppid": 1,
+   "startedAt": 1793830000,
+   "cpuSeconds": 116,
+   "name": "claude",
+   "args": [
+    "claude",
+    "bg-pty-host",
+    "--bg-pty-host",
+    "/tmp/cc-daemon-501/x/spare/a.pty.sock"
+   ]
+  },
+  {
+   "pid": 601,
+   "ppid": 600,
+   "startedAt": 1793830000,
+   "cpuSeconds": 1100,
+   "name": "claude",
+   "args": [
+    "claude",
+    "bg-spare",
+    "--bg-spare",
+    "/tmp/cc-daemon-501/x/spare/a.claim.sock"
+   ]
+  }
+ ]
+}

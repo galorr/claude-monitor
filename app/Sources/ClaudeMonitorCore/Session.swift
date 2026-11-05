@@ -148,6 +148,12 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
     public var hotkey = Hotkey.default
     /// Mongo TTL on events and transitions (spec Phase 3: 30 days, configurable).
     public var retentionDays = 30
+    /// Process CPU alerts (D-018): a group over `cpuAlertPercent` for `cpuAlertMinutes`,
+    /// a shell left running, a shell older than `longShellHours`.
+    public var processAlertsEnabled = true
+    public var cpuAlertPercent = 150
+    public var cpuAlertMinutes = 2
+    public var longShellHours = 3
 
     public init() {}
 
@@ -162,6 +168,10 @@ public struct MonitorSettings: Codable, Equatable, Sendable {
         retentionDays = try c.decodeIfPresent(Int.self, forKey: .retentionDays) ?? d.retentionDays
         hotkeyEnabled = try c.decodeIfPresent(Bool.self, forKey: .hotkeyEnabled) ?? d.hotkeyEnabled
         hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) ?? d.hotkey
+        processAlertsEnabled = try c.decodeIfPresent(Bool.self, forKey: .processAlertsEnabled) ?? d.processAlertsEnabled
+        cpuAlertPercent = try c.decodeIfPresent(Int.self, forKey: .cpuAlertPercent) ?? d.cpuAlertPercent
+        cpuAlertMinutes = try c.decodeIfPresent(Int.self, forKey: .cpuAlertMinutes) ?? d.cpuAlertMinutes
+        longShellHours = try c.decodeIfPresent(Int.self, forKey: .longShellHours) ?? d.longShellHours
     }
 
     public var staleAfter: TimeInterval { TimeInterval(staleAfterMinutes * 60) }

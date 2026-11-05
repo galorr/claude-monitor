@@ -349,3 +349,52 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
   header says "Nothing needs you" when all is quiet.
 - **Noted, not changed:** the hook writes `tool_input.command` verbatim (truncated at 400
   chars), so secrets passed on a command line end up in events.jsonl and Mongo.
+
+## D-018 — Process CPU per session (which Claude shells burn the CPU)
+- **Goal:** show which shells and servers the Claude sessions started are using CPU, which
+  are left running, and which have run for hours. Display only: no kill action (user's call).
+  claude's own CPU is not counted (user's call), only what it started.
+- **App-side sampling, no hook change:** the hook writes one line per event and cannot watch
+  CPU over time. `ProcessMonitor` (Core, own queue, 5 s timer) reads the process table through
+  libproc (`proc_listallpids`, `proc_pidinfo` BSD + task info) and `KERN_PROCARGS2`; no `ps`
+  fork. Only processes of the current user are read; no entitlement is needed. `pti_total_*`
+  are mach ticks (125/3 ns on Apple Silicon), converted with `mach_timebase_info`.
+  Measured on a real machine (≈ 570 own processes, 8 claude processes): ≈ 10 ms per sample,
+  ≈ 55 command lines read; command lines are cached per (pid, start time, name).
+- **Spike findings (2026-11-05):** Bash tool shells, foreground and `run_in_background`,
+  are direct children of the session's claude and run
+  `zsh -c "source ~/.claude/shell-snapshots/snapshot-zsh-….sh … && eval '<command>' < /dev/null && pwd -P >| …"`.
+  The command comes from the single-quoted word after `eval` (`'\''` unescaped). MCP servers
+  are also direct children, started with claude. `claude bg-pty-host` / `bg-spare` are
+  pre-warmed claude processes; once a session claims one, its `claude_pid` is that process
+  and the normal walk applies.
+- **Attribution (pure, `ProcessTree`):** each session's `claude_pid` is a root, if the process
+  started no later than the session's last event (+5 s): otherwise the pid was reused. Several
+  sessions on one claude (`/clear`): the newest owns it. Each direct child of a root is a group
+  with its whole subtree, stopping at another session's claude (`claude -p` from a shell
+  belongs to its own session). Kind: `shell` (snapshot marker in its args), `mcp` (started
+  within 30 s of claude), `other`. A Claude shell whose parent is launchd is `orphaned`; its
+  session is found through its snapshot file, learned while that claude was alive (in memory
+  only, so not across app restarts).
+- **CPU %:** difference of CPU time between two samples, per core like `top` (200 = two
+  cores). A process born since the last sample is averaged over its own life. Keys are
+  (pid, start time), so a reused pid never yields a bogus delta.
+- **Shown:** a "Processes" section (busiest first) lists groups at ≥ 10 % CPU, leftovers, and
+  shells older than 60 s. Each row shows the command (first line), repo, CPU, age, the busiest
+  process below it (`eslint .`), and "claude exited" / "session ended". Click opens the session.
+  A session row shows `CPU n%` when its groups sum to ≥ 25 %.
+- **Leftover** = a shell that is orphaned or whose session is closed / presumed dead. MCP
+  servers are never leftovers: a live claude that outlived its session (an idle `bg-spare`
+  after a presumed-dead session) keeps its servers by design.
+- **Alerts** (Settings, on by default, also gated by the notifications switch): a group at
+  ≥ `cpuAlertPercent` (150) for `cpuAlertMinutes` (2), with hysteresis (the clock restarts
+  only below half the threshold); a leftover shell after 60 s of grace; a shell older than
+  `longShellHours` (3). Each fires once per group. Identifier `proc.<kind>.<pid>@<start ms>`;
+  click opens the session.
+- **Not stored:** samples stay in memory. Nothing goes into events.jsonl (the hook's file) or
+  Mongo.
+- **Limits:** a child that outlives its Claude shell (the zsh exits, the child is reparented to
+  launchd) has no snapshot marker and is not attributed. Processes of other users are invisible.
+- **Seen during testing:** after a rebuild, the ad-hoc signature changes and the Keychain
+  read of the Mongo URI at launch blocks on a macOS "allow access" prompt until it is answered.
+  Pre-existing, not changed here.

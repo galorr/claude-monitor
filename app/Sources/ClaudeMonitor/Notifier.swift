@@ -58,6 +58,26 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, @unchecked Sen
         }
     }
 
+    /// A process alert (D-018). Clicking it opens the session that started the process.
+    func post(_ alert: ProcessAlert) {
+        guard let center else { return }
+        let text = alert.content(now: Date())
+        let content = UNMutableNotificationContent()
+        content.title = text.title
+        content.subtitle = text.subtitle
+        content.body = text.body
+        content.sound = .default
+        if let id = alert.group.sessionId {
+            content.threadIdentifier = id
+            content.userInfo = [Self.sessionIdKey: id]
+        }
+        if let attachment = NotificationIcons.attachment(for: alert.kind) { content.attachments = [attachment] }
+        let request = UNNotificationRequest(identifier: alert.id, content: content, trigger: nil)
+        center.add(request) { [log] error in
+            log.log(error.map { "notification failed (\(alert.id)): \($0)" } ?? "notified: \(alert.id)")
+        }
+    }
+
     /// Removes delivered notifications for a session once it has been dealt with.
     func clear(sessionId: String) {
         center?.removeDeliveredNotifications(
@@ -89,16 +109,28 @@ enum NotificationIcons {
 
     static func attachment(for state: SessionState) -> UNNotificationAttachment? {
         guard let (symbol, color) = style(for: state) else { return nil }
-        let cached = directory.appending(path: "\(state.rawValue).png")
+        return attachment(name: state.rawValue, symbol: symbol, color: color)
+    }
+
+    /// Process alerts: purple flame for CPU, grey moon for a shell left running or running long.
+    static func attachment(for kind: ProcessAlert.Kind) -> UNNotificationAttachment? {
+        switch kind {
+        case .hot: attachment(name: "proc-hot", symbol: "flame.fill", color: .systemPurple)
+        case .leftover, .longRunning: attachment(name: "proc-idle", symbol: "moon.zzz.fill", color: .systemGray)
+        }
+    }
+
+    private static func attachment(name: String, symbol: String, color: NSColor) -> UNNotificationAttachment? {
+        let cached = directory.appending(path: "\(name).png")
         let fm = FileManager.default
         if !fm.fileExists(atPath: cached.path) {
             guard let png = render(symbol: symbol, color: color) else { return nil }
             try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
             guard (try? png.write(to: cached, options: .atomic)) != nil else { return nil }
         }
-        let copy = directory.appending(path: "\(state.rawValue)-\(UUID().uuidString).png")
+        let copy = directory.appending(path: "\(name)-\(UUID().uuidString).png")
         guard (try? fm.copyItem(at: cached, to: copy)) != nil else { return nil }
-        return try? UNNotificationAttachment(identifier: state.rawValue, url: copy,
+        return try? UNNotificationAttachment(identifier: name, url: copy,
                                              options: [UNNotificationAttachmentOptionsThumbnailHiddenKey: false])
     }
 

@@ -47,7 +47,7 @@ struct SessionListView: View {
                     .padding(.bottom, 8)
             }
             Divider()
-            if model.sessions.isEmpty && model.tasks.isEmpty && model.artifacts.isEmpty {
+            if model.sessions.isEmpty && model.tasks.isEmpty && model.artifacts.isEmpty && model.processGroups.isEmpty {
                 EmptyState(hooksHealthy: model.hookStatus.isHealthy, eventsFile: model.paths.eventsFile.path)
             } else {
                 // A ScrollView in a MenuBarExtra window collapses to zero height unless
@@ -75,6 +75,17 @@ struct SessionListView: View {
                                         live: model.runningTaskCount > 0) {
                                     ForEach(model.tasks) { task in
                                         BackgroundJobRow(task: task) { model.open(task) }
+                                        Divider()
+                                    }
+                                }
+                            }
+                            if !model.processGroups.isEmpty {
+                                section(Self.processesSection, title: "Processes",
+                                        summary: Self.processSummary(model.processGroups), live: false) {
+                                    ForEach(model.processGroups) { group in
+                                        ProcessRow(group: group, alertPercent: Double(model.settings.cpuAlertPercent)) {
+                                            model.open(group)
+                                        }
                                         Divider()
                                     }
                                 }
@@ -139,6 +150,15 @@ struct SessionListView: View {
 
     static let backgroundSection = "background"
     static let artifactsSection = "artifacts"
+    static let processesSection = "processes"
+
+    static func processSummary(_ groups: [ProcessGroup]) -> String {
+        let cpu = groups.reduce(0) { $0 + $1.cpuPercent }
+        let leftovers = groups.filter(\.isLeftover).count
+        var parts = ["\(ProcessPolicy.format(percent: cpu)) CPU"]
+        if leftovers > 0 { parts.append("\(leftovers) left running") }
+        return parts.joined(separator: " · ")
+    }
 
     static func taskSummary(running: Int, total: Int) -> String {
         if running == 0 { return "\(total) finished" }
@@ -161,6 +181,7 @@ struct SessionListView: View {
                    highlighted: session.id == model.highlightedSessionId,
                    inEpic: inEpic,
                    showHistory: model.isMongoConfigured,
+                   cpuPercent: model.cpuBadge(for: session),
                    onOpen: { model.open(session) },
                    onHistory: { model.showHistory(session) },
                    onMarkReviewed: { model.markReviewed(session) })
@@ -218,6 +239,18 @@ struct SettingsPanel: View {
             Stepper("Hide ended sessions after \(model.settings.hideEndedAfterHours) h",
                     value: binding(\.hideEndedAfterHours), in: 1...168)
             Divider().padding(.vertical, 4)
+            Toggle("Process alerts", isOn: binding(\.processAlertsEnabled))
+                .help("Shells and servers started by Claude that burn CPU, outlive their session or run for hours")
+            Group {
+                Stepper("CPU over \(model.settings.cpuAlertPercent)% (100% = one core)",
+                        value: binding(\.cpuAlertPercent), in: 50...1000, step: 25)
+                Stepper("…for \(model.settings.cpuAlertMinutes) min",
+                        value: binding(\.cpuAlertMinutes), in: 1...60)
+                Stepper("Shell running longer than \(model.settings.longShellHours) h",
+                        value: binding(\.longShellHours), in: 1...72)
+            }
+            .disabled(!model.settings.processAlertsEnabled)
+            Divider().padding(.vertical, 4)
             Text("Mongo URI (stored in the Keychain)").foregroundStyle(.secondary)
             TextField("mongodb://127.0.0.1:27017/<db>?directConnection=true", text: $model.mongoURIDraft)
                 .textFieldStyle(.roundedBorder)
@@ -259,6 +292,8 @@ struct SessionRow: View {
     /// Inside an epic group: lead with the task id, indent.
     var inEpic = false
     var showHistory = false
+    /// CPU of the session's processes, when high enough to show (D-018).
+    var cpuPercent: Double?
     var onOpen: () -> Void = {}
     var onHistory: () -> Void = {}
     let onMarkReviewed: () -> Void
@@ -288,6 +323,12 @@ struct SessionRow: View {
                     Text(session.state.displayName)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(stateColor)
+                    if let cpu = cpuPercent {
+                        Label("CPU \(ProcessPolicy.format(percent: cpu))", systemImage: "flame.fill")
+                            .font(.caption.weight(.medium).monospacedDigit())
+                            .foregroundStyle(.purple)
+                            .help("CPU used right now by the shells and servers this session started")
+                    }
                     Spacer()
                     if showHistory {
                         Button("History", action: onHistory)
@@ -632,5 +673,93 @@ struct ArtifactRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .help("Open in the browser")
+    }
+}
+
+/// A shell or server a session started, with its CPU (D-018). Display only.
+struct ProcessRow: View {
+    let group: ProcessGroup
+    /// The alert threshold: at or above it the CPU figure turns red.
+    let alertPercent: Double
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+                .help(kindHelp)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(group.commandSummary)
+                        .font(.callout.monospaced())
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer()
+                    Text(ProcessPolicy.format(percent: group.cpuPercent))
+                        .font(.callout.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(cpuColor)
+                }
+                HStack(spacing: 6) {
+                    Text(group.repo ?? "unknown session")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if group.isLeftover {
+                        Text(group.orphaned ? "claude exited" : "session ended")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.orange)
+                    }
+                    if let hottest = group.hottest {
+                        Text(hottest)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Spacer()
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(ProcessPolicy.format(duration: group.age(now: context.date)))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .help(tooltip)
+    }
+
+    private var symbol: String {
+        switch group.kind {
+        case .shell: "terminal"
+        case .mcp: "server.rack"
+        case .other: "gearshape"
+        }
+    }
+
+    private var kindHelp: String {
+        switch group.kind {
+        case .shell: "Shell started by the Bash tool"
+        case .mcp: "MCP server"
+        case .other: "Process started by claude"
+        }
+    }
+
+    private var cpuColor: Color {
+        if group.cpuPercent >= alertPercent { return .red }
+        if group.cpuPercent >= 50 { return .orange }
+        return .secondary
+    }
+
+    private var tooltip: String {
+        var lines = [group.command]
+        lines.append("pid \(group.pid) · \(group.processCount) process\(group.processCount == 1 ? "" : "es") · "
+                     + "\(ProcessPolicy.format(duration: group.cpuSeconds)) CPU time")
+        lines.append(group.sessionId == nil ? "Its session is unknown." : "Click to open its session.")
+        return lines.joined(separator: "\n")
     }
 }

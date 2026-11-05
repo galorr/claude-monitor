@@ -32,6 +32,9 @@ final class AppModel: ObservableObject {
     /// Background work and recent artifacts, for their list sections (D-017).
     @Published private(set) var tasks: [BackgroundJob] = []
     @Published private(set) var artifacts: [ArtifactRecord] = []
+    /// Busy or leftover processes started by sessions, and CPU per session (D-018).
+    @Published private(set) var processGroups: [ProcessGroup] = []
+    @Published private(set) var cpuBySession: [String: Double] = [:]
     @Published private(set) var settings: MonitorSettings
     /// Session to scroll to and highlight (set when a notification is clicked).
     @Published var highlightedSessionId: String?
@@ -56,6 +59,7 @@ final class AppModel: ObservableObject {
     let paths: AppPaths
     let sync: SyncEngine
     private let engine: MonitorEngine
+    private let processMonitor = ProcessMonitor()
     private let log: AppLog
     private var notifier: Notifier?
     private var launchObserver: NSObjectProtocol?
@@ -100,6 +104,9 @@ final class AppModel: ObservableObject {
         applyHotkey()
         refreshHookStatus()
         applyMongoConfig()
+        processMonitor.start(settings: settings) { [weak self] update in
+            Task { @MainActor in self?.apply(update) }
+        }
         engine.start(settings: settings) { [weak self, sync] update in
             // Straight to the sync: Mongo upserts don't wait for the UI.
             Task { await sync.enqueue(update.changed) }
@@ -140,6 +147,18 @@ final class AppModel: ObservableObject {
     func open(_ task: BackgroundJob) {
         guard let session = sessions.first(where: { $0.id == task.sessionId }) else { return }
         open(session)
+    }
+
+    /// Click on a process row: jump to the session that started it.
+    func open(_ group: ProcessGroup) {
+        guard let id = group.sessionId, let session = sessions.first(where: { $0.id == id }) else { return }
+        open(session)
+    }
+
+    /// Current CPU of a session's processes, when worth showing on its row.
+    func cpuBadge(for session: Session) -> Double? {
+        guard let cpu = cpuBySession[session.id], cpu >= ProcessPolicy.badgeMinPercent else { return nil }
+        return cpu
     }
 
     func open(_ artifact: ArtifactRecord) {
@@ -217,6 +236,7 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(data, forKey: Self.settingsKey)
         }
         engine.updateSettings(next)
+        processMonitor.updateSettings(next)
         if retentionChanged { applyMongoConfig() }
         if !recordingHotkey { applyHotkey() }
     }
@@ -321,9 +341,16 @@ final class AppModel: ObservableObject {
         attentionCount = update.attentionCount
         tasks = update.tasks
         artifacts = update.artifacts
+        processMonitor.updateSessions(update.sessions)
         for s in update.notify { notifier?.post(s) }
         // A session that left a notifying state no longer needs its banner.
         for s in sessions where !s.state.needsAttention { notifier?.clear(sessionId: s.id) }
+    }
+
+    private func apply(_ update: ProcessMonitor.Update) {
+        if update.groups != processGroups { processGroups = update.groups }
+        if update.cpuBySession != cpuBySession { cpuBySession = update.cpuBySession }
+        for alert in update.alerts { notifier?.post(alert) }
     }
 
     /// Notification click: open the session window with that session highlighted.
