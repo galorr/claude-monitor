@@ -424,6 +424,7 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
   sessions at launch; `SessionStore` stays pure (`setTitle`). Sessions saved before this have no
   `transcript_path`: the path is derived from cwd (`~/.claude/projects/<cwd, non-alphanumerics
   → "-">/<id>.jsonl`).
-- **Shown:** the title is the row's main label, with `repo · branch` (or epic) beside it in
-  grey; no title → the repo, as before. Same in the History window and notification titles
-  (subtitle keeps folder · branch). Synced to Mongo as `title`.
+- **Shown:** the row keeps `repo · branch` (or epic) as its first line, and the title is a
+  second line under it (user's call: folder first); no title → the row is as before. Same
+  order in the History window. Notification titles use the title (subtitle keeps
+  folder · branch). Synced to Mongo as `title`.

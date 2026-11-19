@@ -312,9 +312,8 @@ struct SessionRow: View {
                     if inEpic, let task = session.taskId {
                         Text(task).fontWeight(.semibold).monospacedDigit()
                     }
-                    Text(session.displayName).fontWeight(inEpic ? .regular : .semibold)
-                        .lineLimit(1).truncationMode(.tail)
-                    if let detail = locationDetail {
+                    Text(session.displayRepo).fontWeight(inEpic ? .regular : .semibold).lineLimit(1)
+                    if !inEpic, let detail = branchDetail {
                         Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
@@ -322,6 +321,10 @@ struct SessionRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                }
+                // What the session is about, under where it runs (D-019).
+                if let title = session.title {
+                    Text(title).lineLimit(1).truncationMode(.tail)
                 }
                 HStack {
                     Text(session.state.displayName)
@@ -361,18 +364,9 @@ struct SessionRow: View {
         .help(session.state.isEnded ? "This session has ended" : "Click to open its terminal")
     }
 
-    /// Next to the name: the repo when the name is a title (D-019), then the branch or epic.
-    private var locationDetail: String? {
-        var parts: [String] = []
-        if session.title != nil { parts.append(session.displayRepo) }
-        if !inEpic {
-            if let epic = session.epicKey, let task = session.taskId {
-                parts.append("\(epic) · \(task)")
-            } else if let branch = session.branch {
-                parts.append(branch)
-            }
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    private var branchDetail: String? {
+        if let epic = session.epicKey, let task = session.taskId { return "\(epic) · \(task)" }
+        return session.branch
     }
 
     private var sourceSymbol: String {
@@ -402,8 +396,11 @@ struct HistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.session.displayName).font(.headline)
-                Text([model.session.title.map { _ in model.session.displayRepo }, model.session.branch, String(model.session.id.prefix(8))].compactMap { $0 }.joined(separator: " · "))
+                Text(model.session.displayRepo).font(.headline)
+                if let title = model.session.title {
+                    Text(title)
+                }
+                Text([model.session.branch, String(model.session.id.prefix(8))].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
