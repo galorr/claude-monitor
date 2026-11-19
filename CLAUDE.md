@@ -3,7 +3,7 @@
 macOS menu-bar app that tracks local Claude Code sessions (terminal + desktop).
 Full spec: `docs/SPEC.md`. Deviations and choices: `docs/decisions.md` (log every one).
 
-**Current phase:** all spec phases (0–5) are done; D-017 added background/artifact sections; D-018 added process CPU per session.
+**Current phase:** all spec phases (0–5) are done; D-017 added background/artifact sections; D-018 added process CPU per session; D-019 names sessions by their Claude Code title.
 
 ## Rules
 - Work phase by phase. Stop at each phase end with test instructions, then commit.

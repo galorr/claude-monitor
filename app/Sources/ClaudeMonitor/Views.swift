@@ -322,6 +322,10 @@ struct SessionRow: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+                // What the session is about, under where it runs (D-019).
+                if let title = session.title {
+                    Text(title).lineLimit(1).truncationMode(.tail)
+                }
                 HStack {
                     Text(session.state.displayName)
                         .font(.caption.weight(.medium))
@@ -393,6 +397,9 @@ struct HistoryView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.session.displayRepo).font(.headline)
+                if let title = model.session.title {
+                    Text(title)
+                }
                 Text([model.session.branch, String(model.session.id.prefix(8))].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption)
                     .foregroundStyle(.secondary)

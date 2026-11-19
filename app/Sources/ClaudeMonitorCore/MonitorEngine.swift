@@ -52,6 +52,7 @@ public final class MonitorEngine: @unchecked Sendable {
             self.listener = listener
             loadSnapshot()
             backfillJournalIfMissing()
+            if refreshTitles(Set(snapshot.store.sessions.keys)) { persist() }
             publish(changed: Array(snapshot.store.sessions.keys))
             ingest()
             sweep()
@@ -183,6 +184,7 @@ public final class MonitorEngine: @unchecked Sendable {
             changed = changed || moved
             if result.lines.isEmpty { break }
         }
+        if refreshTitles(touched) { changed = true }
         if changed {
             record(changes)
             persist()
@@ -190,6 +192,19 @@ public final class MonitorEngine: @unchecked Sendable {
                 ? Self.sessionsToNotify(changes, store: snapshot.store, now: now()) : []
             publish(notify: notify, changed: Array(touched))
         }
+    }
+
+    /// Re-reads the title of each touched session from its transcript (D-019).
+    /// Keeps the last known title when the tail has none.
+    private func refreshTitles(_ ids: Set<String>) -> Bool {
+        var changed = false
+        for id in ids {
+            guard let s = snapshot.store.sessions[id],
+                  let path = s.transcriptPath ?? s.cwd.map({ TranscriptTitle.defaultPath(sessionId: id, cwd: $0) }),
+                  let title = TranscriptTitle.read(path: path) else { continue }
+            if snapshot.store.setTitle(id, title) { changed = true }
+        }
+        return changed
     }
 
     private func sweep() {

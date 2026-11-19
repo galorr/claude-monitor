@@ -410,3 +410,21 @@ Interactive sessions are unaffected. Headless runs are not a target of this app.
 - **Seen during testing:** after a rebuild, the ad-hoc signature changes and the Keychain
   read of the Mongo URI at launch blocks on a macOS "allow access" prompt until it is answered.
   Pre-existing, not changed here.
+
+## D-019 — Session titles from the transcript
+- **Problem:** rows were named `repo · branch`. Several sessions in one checkout (five in
+  `ace`) showed the same name and the branch the folder was on, not what each was doing.
+- **Source:** Claude Code keeps a name per session in its transcript: `{"type":"ai-title",
+  "aiTitle":…}` (auto titling) and `{"type":"custom-title","customTitle":…}` (`/rename`).
+  Both are re-appended through the session, so the file's end holds the current one. Every
+  hook payload carries `transcript_path`; no hook change.
+- **Read:** `TranscriptTitle` reads the last 512 KB of the file (lines can be large API
+  blobs), newest `custom-title` wins, else newest `ai-title`. If the tail has neither, the last
+  known title is kept. The engine re-reads it for every session touched by a batch and for all
+  sessions at launch; `SessionStore` stays pure (`setTitle`). Sessions saved before this have no
+  `transcript_path`: the path is derived from cwd (`~/.claude/projects/<cwd, non-alphanumerics
+  → "-">/<id>.jsonl`).
+- **Shown:** the row keeps `repo · branch` (or epic) as its first line, and the title is a
+  second line under it (user's call: folder first); no title → the row is as before. Same
+  order in the History window. Notification titles use the title (subtitle keeps
+  folder · branch). Synced to Mongo as `title`.

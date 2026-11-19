@@ -22,6 +22,7 @@ public struct HookEvent: Equatable, Sendable {
     public var ts: Date
     public var eventId: String?
     public var cwd: String?
+    public var transcriptPath: String?
     public var gitRoot: String?
     public var gitBranch: String?
     public var tty: String?
@@ -76,6 +77,7 @@ public struct HookEvent: Equatable, Sendable {
             ts: ts,
             eventId: str("event_id"),
             cwd: str("cwd"),
+            transcriptPath: str("transcript_path"),
             gitRoot: str("git_root"),
             gitBranch: str("git_branch"),
             tty: str("tty"),
