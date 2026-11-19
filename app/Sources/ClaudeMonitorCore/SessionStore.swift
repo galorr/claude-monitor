@@ -55,6 +55,15 @@ public struct SessionStore: Codable, Equatable, Sendable {
         return change
     }
 
+    /// Title read from the transcript (D-019). Returns true if it changed.
+    @discardableResult
+    public mutating func setTitle(_ id: String, _ title: String) -> Bool {
+        guard var s = sessions[id], s.title != title else { return false }
+        s.title = title
+        sessions[id] = s
+        return true
+    }
+
     /// User action. Returns false if the session is not in a reviewable state.
     @discardableResult
     public mutating func markReviewed(_ id: String, at: Date) -> Bool {
@@ -189,6 +198,7 @@ public struct SessionStore: Codable, Equatable, Sendable {
             if overwrite || s[keyPath: keyPath] == nil { s[keyPath: keyPath] = value }
         }
         set(\.cwd, e.cwd)
+        set(\.transcriptPath, e.transcriptPath)
         set(\.tty, e.tty)
         set(\.claudePid, e.claudePid)
         set(\.hostApp, e.procChain.flatMap(Self.hostApp))

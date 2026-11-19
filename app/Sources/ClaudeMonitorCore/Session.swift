@@ -104,6 +104,10 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
     public var claudePid: Int?
     /// The outermost .app in the process chain (Terminal, iTerm2, VS Code, Claude), for jumping.
     public var hostApp: String?
+    /// The session's transcript, where Claude Code keeps its title (D-019).
+    public var transcriptPath: String?
+    /// `/rename` name, else Claude Code's auto title (D-019).
+    public var title: String?
     public var state: SessionState
     public var lastEventAt: Date
     public var lastMessage: String?
@@ -120,6 +124,9 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
 
     /// Short name for the row: git root folder, else cwd folder, else the id.
     public var displayRepo: String { repo ?? String(id.prefix(8)) }
+
+    /// Main label: what the session is about, else where it runs (D-019).
+    public var displayName: String { title ?? displayRepo }
 }
 
 public struct StateChange: Equatable, Sendable {
@@ -194,7 +201,7 @@ public enum NotificationPolicy {
     }
 
     public static func content(for session: Session) -> (title: String, subtitle: String, body: String) {
-        var title = "\(session.displayRepo): \(session.state.displayName)"
+        var title = "\(session.displayName): \(session.state.displayName)"
         if let task = session.taskId { title += " (\(task))" }
         // Where the terminal is: the working folder's name, then the branch.
         var subtitle = session.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""

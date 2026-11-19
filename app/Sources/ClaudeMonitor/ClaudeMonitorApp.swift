@@ -313,7 +313,7 @@ final class AppModel: ObservableObject {
 
     func showHistory(_ session: Session) {
         let model = HistoryModel(session: session, sync: sync)
-        windows.show("history-\(session.id)", title: "History: \(session.displayRepo)") {
+        windows.show("history-\(session.id)", title: "History: \(session.displayName)") {
             HistoryView(model: model)
         }
     }

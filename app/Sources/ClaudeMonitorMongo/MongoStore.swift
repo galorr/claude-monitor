@@ -282,6 +282,7 @@ public struct MongoStore: PersistenceStore {
         doc["repo"] = s.repo
         doc["cwd"] = s.cwd
         doc["branch"] = s.branch
+        doc["title"] = s.title
         doc["epic_key"] = s.epicKey
         doc["task_id"] = s.taskId
         doc["tty"] = s.tty
